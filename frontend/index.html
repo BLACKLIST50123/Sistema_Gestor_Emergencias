@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SGE · Sistema de Gestión de Emergencias</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+
+<!-- ============ PANTALLA DE LOGIN ============ -->
+<section id="pantallaLogin" class="login-screen">
+  <div class="login-grid-bg"></div>
+  <div class="login-card">
+    <div class="login-mark">
+      <span class="login-mark-dot"></span>
+      <span class="login-mark-text">SGE</span>
+    </div>
+    <h1>Central de Emergencias</h1>
+    <p class="login-sub">Ingresa tus credenciales de operador para acceder a la consola.</p>
+
+    <form id="formLogin" class="login-form">
+      <label class="field">
+        <span>Usuario</span>
+        <input type="text" id="loginUsuario" placeholder="ej. mfernandez" autocomplete="username" required>
+      </label>
+      <label class="field">
+        <span>Contraseña</span>
+        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="btn-primary btn-full">Ingresar a consola</button>
+      <p class="login-error" id="loginError"></p>
+    </form>
+
+    <div class="login-demo">
+      <span class="tag-dot"></span> Demo local — usa cualquier usuario del seed (ej. <code>mfernandez</code>) con la API corriendo en <code>localhost:4000</code>
+    </div>
+  </div>
+</section>
+
+<!-- ============ APP PRINCIPAL ============ -->
+<div id="app" class="app hidden">
+
+  <!-- Barra lateral -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name">SGE</span>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-view="alertas">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2 2 20h20L12 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9v5M12 17h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>Alertas en tiempo real</span>
+      </button>
+      <button class="nav-item" data-view="recursos">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 6V4h10v2M3 12h18" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Usuarios y recursos</span>
+      </button>
+      <button class="nav-item" data-view="instituciones">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 21V9l8-5 8 5v12" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 21v-6h6v6" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span>Gestión institucional</span>
+      </button>
+      <button class="nav-item" data-view="evidencias">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 21h8M12 18v3" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.4" fill="currentColor"/><path d="M4.5 16 9 11l3 3 3-4 4.5 6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        <span>Evidencias multimedia</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="db-status">
+        <span class="db-dot db-dot-pg"></span> PostgreSQL
+        <span class="db-dot db-dot-ora"></span> Oracle
+        <span class="db-dot db-dot-cas"></span> Cassandra
+        <span class="db-dot db-dot-mon"></span> MongoDB
+      </div>
+      <button id="btnLogout" class="btn-ghost btn-full">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <!-- Contenido -->
+  <main class="main">
+
+    <header class="topbar">
+      <div>
+        <p class="topbar-eyebrow" id="viewEyebrow">Módulo activo</p>
+        <h2 id="viewTitle">Alertas en tiempo real</h2>
+      </div>
+      <div class="topbar-user">
+        <span class="pulse-live"><span></span></span>
+        <div class="user-chip">
+          <div class="user-avatar" id="userAvatar">--</div>
+          <div>
+            <p class="user-name" id="userName">—</p>
+            <p class="user-role" id="userRole">—</p>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== VISTA: ALERTAS EN TIEMPO REAL ===== -->
+    <section class="view active" id="view-alertas">
+      <div class="alertas-layout">
+        <div class="map-panel">
+          <div class="map-panel-head">
+            <h3>Mapa operativo</h3>
+            <span class="hint">Clic en el mapa para registrar la ubicación de una nueva alerta</span>
+          </div>
+          <div id="mapaAlertas" class="mapa"></div>
+        </div>
+
+        <div class="alertas-side">
+          <div class="card">
+            <h3>Nueva alerta</h3>
+            <form id="formAlerta" class="stacked-form">
+              <label class="field">
+                <span>Tipo</span>
+                <select id="alertaTipo">
+                  <option value="medica">Médica</option>
+                  <option value="seguridad">Seguridad</option>
+                  <option value="incendio">Incendio</option>
+                  <option value="accidente">Accidente</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Descripción</span>
+                <textarea id="alertaDescripcion" rows="3" placeholder="Describe la situación reportada..." required></textarea>
+              </label>
+              <div class="coords-row">
+                <label class="field">
+                  <span>Latitud</span>
+                  <input type="text" id="alertaLat" placeholder="Clic en el mapa" readonly required>
+                </label>
+                <label class="field">
+                  <span>Longitud</span>
+                  <input type="text" id="alertaLng" placeholder="Clic en el mapa" readonly required>
+                </label>
+              </div>
+              <label class="field">
+                <span>Referencia (opcional)</span>
+                <input type="text" id="alertaDireccion" placeholder="Ej. Plaza de Armas, Huaraz">
+              </label>
+              <button type="submit" class="btn-primary btn-full">Registrar alerta</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-head-row">
+              <h3>Cola de alertas</h3>
+              <span class="badge" id="countAlertas">0</span>
+            </div>
+            <ul class="alertas-list" id="listaAlertas"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VISTA: USUARIOS Y RECURSOS ===== -->
+    <section class="view" id="view-recursos">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head-row">
+            <h3>Operadores</h3>
+            <span class="db-pill db-pill-pg">PostgreSQL</span>
+          </div>
+          <form id="formOperador" class="inline-form">
+            <input type="text" id="opNombre" placeholder="Nombre completo" required>
+            <input type="text" id="opUsuario" placeholder="usuario" required>
+            <input type="password" id="opPassword" placeholder="contraseña" required>
+            <select id="opRol">
+              <option value="operador">Operador</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="administrador">Administrador</option>
+            </select>
+            <button type="submit" class="btn-primary">Agregar</button>
+          </form>
+          <table class="table" id="tablaOperadores">
+            <thead><tr><th>ID</th><th>Nombre</th><th>Usuario</th><th>Rol</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-head-row">
+            <h3>Recursos</h3>
+            <span class="db-pill db-pill-pg">PostgreSQL</span>
+          </div>
+          <form id="formRecurso" class="inline-form">
+            <select id="recTipo">
+              <option value="ambulancia">Ambulancia</option>
+              <option value="patrulla">Patrulla</option>
+              <option value="bomberos">Bomberos</option>
+            </select>
+            <input type="text" id="recPlaca" placeholder="Placa" required>
+            <button type="submit" class="btn-primary">Agregar</button>
+          </form>
+          <table class="table" id="tablaRecursos">
+            <thead><tr><th>ID</th><th>Tipo</th><th>Placa</th><th>Estado</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VISTA: GESTIÓN INSTITUCIONAL ===== -->
+    <section class="view" id="view-instituciones">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head-row">
+            <h3>Instituciones</h3>
+            <span class="db-pill db-pill-ora">Oracle</span>
+          </div>
+          <form id="formInstitucion" class="inline-form">
+            <input type="text" id="instNombre" placeholder="Nombre de la institución" required>
+            <select id="instTipo">
+              <option value="Hospital">Hospital</option>
+              <option value="Comisaria">Comisaría</option>
+              <option value="Bomberos">Bomberos</option>
+            </select>
+            <button type="submit" class="btn-primary">Agregar</button>
+          </form>
+          <table class="table" id="tablaInstituciones">
+            <thead><tr><th>ID</th><th>Nombre</th><th>Tipo</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-head-row">
+            <h3>Sedes y capacidad</h3>
+            <span class="db-pill db-pill-ora">Oracle</span>
+          </div>
+          <table class="table" id="tablaSedes">
+            <thead><tr><th>ID</th><th>Dirección</th><th>Camas</th><th>Calabozos</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VISTA: EVIDENCIAS MULTIMEDIA ===== -->
+    <section class="view" id="view-evidencias">
+      <div class="card">
+        <div class="card-head-row">
+          <h3>Cerrar caso con evidencia</h3>
+          <span class="db-pill db-pill-mon">MongoDB</span>
+        </div>
+        <form id="formEvidencia" class="stacked-form">
+          <label class="field">
+            <span>ID de alerta (Cassandra)</span>
+            <select id="evAlerta"></select>
+          </label>
+          <label class="field">
+            <span>Descripción del cierre</span>
+            <textarea id="evDescripcion" rows="3" placeholder="Describe cómo se resolvió el caso..." required></textarea>
+          </label>
+          <label class="field">
+            <span>Archivos (nombres, simulados — separados por coma)</span>
+            <input type="text" id="evArchivos" placeholder="foto1.jpg, video1.mp4">
+          </label>
+          <button type="submit" class="btn-primary btn-full">Guardar evidencia y cerrar caso</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Evidencias registradas</h3>
+        <div id="listaEvidencias" class="evidencias-grid"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

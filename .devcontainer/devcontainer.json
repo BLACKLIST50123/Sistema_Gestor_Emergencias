@@ -1,0 +1,40 @@
+{
+  "name": "SGE - Sistema de Gestión de Emergencias",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+
+  // Puertos de las 4 bases de datos + backend + frontend.
+  // Codespaces los detecta y ofrece forward automático, pero los
+  // declaramos explícitos para que aparezcan siempre en la pestaña "Ports".
+  "forwardPorts": [5432, 1521, 9042, 27017, 4000, 5500],
+
+  "portsAttributes": {
+    "5432": { "label": "PostgreSQL (Usuarios y Recursos)", "onAutoForward": "silent" },
+    "1521": { "label": "Oracle (Gestión Institucional)", "onAutoForward": "silent" },
+    "9042": { "label": "Cassandra (Alertas)", "onAutoForward": "silent" },
+    "27017": { "label": "MongoDB (Evidencias)", "onAutoForward": "silent" },
+    "4000": { "label": "Backend API", "onAutoForward": "notify" },
+    "5500": { "label": "Frontend", "onAutoForward": "openBrowser" }
+  },
+
+  // Se ejecuta una sola vez al crear el Codespace: instala dependencias del backend.
+  "postCreateCommand": "cd backend && npm install",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}

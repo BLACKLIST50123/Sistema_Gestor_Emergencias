@@ -1,0 +1,70 @@
+# =========================================================
+# Levanta las 4 bases de datos del SGE con un solo comando:
+#   docker compose up -d
+#
+# Nota sobre Oracle: la imagen oficial de Oracle XE es pesada
+# (>2GB) y tarda varios minutos en arrancar la primera vez.
+# Si tu máquina es limitada, puedes comentar el servicio "oracle"
+# y usar Oracle Cloud Free Tier o una instalación local en su lugar.
+# =========================================================
+
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: sge_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sge_usuarios_recursos
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/postgres/schema.sql:/docker-entrypoint-initdb.d/1_schema.sql
+      - ./db/postgres/seed.sql:/docker-entrypoint-initdb.d/2_seed.sql
+
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: sge_oracle
+    restart: unless-stopped
+    environment:
+      ORACLE_PASSWORD: oracle
+      APP_USER: sge_user
+      APP_USER_PASSWORD: oracle
+    ports:
+      - "1521:1521"
+    volumes:
+      - ora_data:/opt/oracle/oradata
+      - ./db/oracle/schema.sql:/container-entrypoint-initdb.d/1_schema.sql
+      - ./db/oracle/seed.sql:/container-entrypoint-initdb.d/2_seed.sql
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: sge_cassandra
+    restart: unless-stopped
+    ports:
+      - "9042:9042"
+    volumes:
+      - cas_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  mongodb:
+    image: mongo:7
+    container_name: sge_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  pg_data:
+  ora_data:
+  cas_data:
+  mongo_data:

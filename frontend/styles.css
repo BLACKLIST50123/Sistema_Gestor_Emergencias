@@ -527,3 +527,84 @@ button, input, select, textarea {
   .sidebar { display: none; }
   .alertas-layout, .two-col { grid-template-columns: 1fr; }
 }
+
+/* ---- Punto 4: acciones de despacho (asignar recurso / cerrar caso) ---- */
+
+.alerta-item-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.alerta-item-acciones select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  color: var(--text);
+  flex: 1;
+  min-width: 120px;
+}
+.btn-mini {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-mini:hover { color: var(--text); border-color: var(--text-faint); }
+.btn-mini-primary { color: var(--pg); border-color: #4C8DFF55; }
+.btn-mini-primary:hover { border-color: var(--pg); }
+.btn-mini-close { color: var(--mon); border-color: #2ECC7155; }
+.btn-mini-close:hover { border-color: var(--mon); }
+
+/* ---- Punto 4: modal Historial 360° ---- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: #05070ac0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-soft);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+.modal-head h3 { font-family: var(--font-display); font-size: 15px; }
+.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+.modal-seccion { border: 1px solid var(--border-soft); border-radius: 8px; padding: 12px; }
+.modal-seccion h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+.modal-seccion p { font-size: 13px; color: var(--text); line-height: 1.5; }
+.modal-media { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.modal-media img, .modal-media video { width: 120px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }

@@ -1,6 +1,6 @@
 const express = require("express");
 const { getOracleConnection } = require("../config/oracle");
-const { verificarToken } = require("../services/authMiddleware");
+const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { eliminarInstitucionEnCascada } = require("../services/cascadeService");
 const { sincronizarInstitucion } = require("../services/syncService");
 
@@ -19,7 +19,7 @@ router.get("/instituciones", async (req, res) => {
   }
 });
 
-router.post("/instituciones", async (req, res) => {
+router.post("/instituciones", requireRole("administrador"), async (req, res) => {
   const { nombre, tipo } = req.body;
   const conn = await getOracleConnection();
   try {
@@ -42,7 +42,7 @@ router.post("/instituciones", async (req, res) => {
   }
 });
 
-router.delete("/instituciones/:id", async (req, res) => {
+router.delete("/instituciones/:id", requireRole("administrador"), async (req, res) => {
   const resultado = await eliminarInstitucionEnCascada(parseInt(req.params.id, 10));
   res.json({ mensaje: "Institución desactivada en cascada", detalle: resultado });
 });
@@ -61,7 +61,7 @@ router.get("/sedes", async (req, res) => {
   }
 });
 
-router.post("/sedes", async (req, res) => {
+router.post("/sedes", requireRole("administrador"), async (req, res) => {
   const { id_institucion, direccion, camas_disponibles, calabozos_disponibles, latitud, longitud } = req.body;
   const conn = await getOracleConnection();
   try {
@@ -85,7 +85,7 @@ router.post("/sedes", async (req, res) => {
 });
 
 // Derivar paciente: usa el procedimiento sp_derivar_paciente (resta 1 cama)
-router.post("/sedes/:id/derivar-paciente", async (req, res) => {
+router.post("/sedes/:id/derivar-paciente", requireRole("operador", "administrador"), async (req, res) => {
   const conn = await getOracleConnection();
   try {
     await conn.execute(
@@ -100,7 +100,7 @@ router.post("/sedes/:id/derivar-paciente", async (req, res) => {
   }
 });
 
-router.post("/sedes/:id/derivar-detenido", async (req, res) => {
+router.post("/sedes/:id/derivar-detenido", requireRole("operador", "administrador"), async (req, res) => {
   const conn = await getOracleConnection();
   try {
     await conn.execute(

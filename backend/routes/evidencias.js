@@ -1,12 +1,32 @@
 const express = require("express");
+const path = require("path");
+const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 const { getMongoDb } = require("../config/mongodb");
-const { verificarToken } = require("../services/authMiddleware");
+const { verificarToken, requireRole } = require("../services/authMiddleware");
 const pgPool = require("../config/postgres");
 const cassandraClient = require("../config/cassandra");
 
 const router = express.Router();
 router.use(verificarToken);
+
+// -----------------------------------------------------------
+// PUNTO 3: SUBIDA DE ARCHIVOS REALES (MongoDB solo guarda la ruta)
+// -----------------------------------------------------------
+// multer.diskStorage guarda el archivo físico en la carpeta uploads/
+// del backend. En MongoDB NUNCA se guarda el archivo en sí, solo la
+// ruta (ruta_archivo) donde quedó guardado en disco.
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, "..", "uploads"));
+  },
+  filename: (req, file, cb) => {
+    // nombre único para no pisar archivos con el mismo nombre
+    const nombreUnico = `${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`;
+    cb(null, nombreUnico);
+  }
+});
+const upload = multer({ storage });
 
 // GET evidencias de una alerta específica
 router.get("/evidencias/alerta/:idAlerta", async (req, res) => {
@@ -18,8 +38,10 @@ router.get("/evidencias/alerta/:idAlerta", async (req, res) => {
 });
 
 // POST nueva evidencia al cerrar un caso
-router.post("/evidencias", async (req, res) => {
-  const { id_alerta, descripcion, archivos_multimedia } = req.body;
+// El frontend envía esto como multipart/form-data (FormData), con
+// el campo "archivo" siendo el <input type="file"> real.
+router.post("/evidencias", requireRole("operador", "administrador"), upload.single("archivo"), async (req, res) => {
+  const { id_alerta, descripcion } = req.body;
   const id_operador = req.operador.id_operador; // viene del token (login PostgreSQL)
 
   if (!id_alerta || !descripcion) {
@@ -60,6 +82,19 @@ router.post("/evidencias", async (req, res) => {
     console.error("[evidencias] No se pudo obtener repl_alerta:", err.message);
   }
 
+  // Si vino un archivo real (multer lo dejó en req.file), armamos su
+  // registro con la RUTA en disco. MongoDB solo guarda esa ruta, nunca
+  // el binario del archivo.
+  const archivos_multimedia = [];
+  if (req.file) {
+    archivos_multimedia.push({
+      nombre_archivo: req.file.originalname,
+      ruta_archivo: `/uploads/${req.file.filename}`, // ruta pública servida por express.static
+      tipo: req.file.mimetype.startsWith("video") ? "video" : "foto",
+      fecha_subida: new Date()
+    });
+  }
+
   const doc = {
     id_evidencia: uuidv4(),
     id_alerta,
@@ -67,10 +102,7 @@ router.post("/evidencias", async (req, res) => {
     id_operador,
     repl_operador,
     repl_alerta,
-    archivos_multimedia: (archivos_multimedia || []).map(a => ({
-      ...a,
-      fecha_subida: new Date()
-    })),
+    archivos_multimedia,
     estado_caso: "cerrado",
     activo: true,
     fecha_creacion: new Date()
@@ -83,10 +115,19 @@ router.post("/evidencias", async (req, res) => {
 });
 
 // POST agregar un archivo multimedia más a una evidencia existente
-router.post("/evidencias/:id/archivos", async (req, res) => {
-  const db = getMongoDb();
-  const nuevoArchivo = { ...req.body, fecha_subida: new Date() };
+router.post("/evidencias/:id/archivos", requireRole("operador", "administrador"), upload.single("archivo"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Debes adjuntar un archivo (campo 'archivo')" });
+  }
 
+  const nuevoArchivo = {
+    nombre_archivo: req.file.originalname,
+    ruta_archivo: `/uploads/${req.file.filename}`,
+    tipo: req.file.mimetype.startsWith("video") ? "video" : "foto",
+    fecha_subida: new Date()
+  };
+
+  const db = getMongoDb();
   await db.collection("evidencias").updateOne(
     { id_evidencia: req.params.id },
     { $push: { archivos_multimedia: nuevoArchivo } }

@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
 const { connectMongo } = require("./config/mongodb");
 const { initOraclePool } = require("./config/oracle");
@@ -14,6 +15,11 @@ const evidenciasRoutes = require("./routes/evidencias");
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Carpeta pública donde multer guarda las evidencias (fotos/videos).
+// MongoDB solo guarda la ruta "/uploads/archivo.jpg"; el archivo real
+// vive aquí en disco, y este middleware lo sirve al frontend.
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api", recursosRoutes);        // /api/operadores, /api/recursos

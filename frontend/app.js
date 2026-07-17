@@ -9,13 +9,17 @@ let TOKEN = localStorage.getItem("sge_token") || null;
 let OPERADOR = JSON.parse(localStorage.getItem("sge_operador") || "null");
 let mapa, marcadorTemporal;
 const marcadoresAlertas = {};
+let recursosDisponibles = []; // caché simple para armar los <select> de despacho
 
 // ---------- Helper de fetch autenticado ----------
 async function api(path, options = {}) {
+  const esFormData = options.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      // Si el body es FormData (subida de archivos), NO seteamos
+      // Content-Type: el navegador lo arma solo con el boundary correcto.
+      ...(esFormData ? {} : { "Content-Type": "application/json" }),
       ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
       ...(options.headers || {})
     }
@@ -66,19 +70,53 @@ document.getElementById("btnLogout").addEventListener("click", () => {
   document.getElementById("pantallaLogin").classList.remove("hidden");
 });
 
-function entrarAApp() {
+async function entrarAApp() {
   document.getElementById("pantallaLogin").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("userName").textContent = OPERADOR.nombre;
   document.getElementById("userRole").textContent = OPERADOR.rol;
   document.getElementById("userAvatar").textContent = OPERADOR.nombre.split(" ").map(w => w[0]).slice(0,2).join("");
+  aplicarPermisosPorRol(OPERADOR.rol);
   initMapa();
+  await cargarRecursos();
   cargarAlertas();
   cargarOperadores();
-  cargarRecursos();
   cargarInstituciones();
   cargarSedes();
   cargarEvidencias();
+  cargarHistorial();
+}
+
+// -----------------------------------------------------------
+// PUNTO 2: RBAC BÁSICO EN EL FRONTEND
+// -----------------------------------------------------------
+// Lee el rol guardado en localStorage (sge_operador.rol) y, con CSS/JS
+// simple, oculta los botones de navegación y las secciones que ese
+// rol no puede usar. Esto es solo una capa de USABILIDAD: la
+// seguridad real la hace el backend con requireRole() en cada ruta.
+function aplicarPermisosPorRol(rol) {
+  // Nav: cada botón declara qué roles pueden verlo en data-roles="a,b"
+  document.querySelectorAll(".nav-item[data-roles]").forEach(btn => {
+    const rolesPermitidos = btn.dataset.roles.split(",");
+    btn.classList.toggle("hidden", !rolesPermitidos.includes(rol));
+  });
+
+  // Vistas: mismo criterio, por si alguna quedara visible sin su botón de nav
+  document.querySelectorAll(".view[data-roles]").forEach(seccion => {
+    const rolesPermitidos = seccion.dataset.roles.split(",");
+    if (!rolesPermitidos.includes(rol)) seccion.classList.remove("active");
+  });
+
+  // El Supervisor es de SOLO LECTURA: no ve formularios de escritura,
+  // solo el Historial de emergencias cerradas.
+  if (rol === "supervisor") {
+    document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    const navHistorial = document.querySelector('.nav-item[data-view="historial"]');
+    if (navHistorial) navHistorial.classList.add("active");
+    document.getElementById("view-historial").classList.add("active");
+    document.getElementById("viewTitle").textContent = "Historial 360°";
+  }
 }
 
 if (TOKEN && OPERADOR) entrarAApp();
@@ -180,10 +218,18 @@ async function cargarAlertas() {
     lista.innerHTML = "";
     document.getElementById("countAlertas").textContent = alertas.length;
 
+    const puedeDespachar = OPERADOR && (OPERADOR.rol === "operador" || OPERADOR.rol === "administrador");
+
     alertas.forEach(a => {
       pintarAlertaEnMapa(a);
       const li = document.createElement("li");
       li.className = "alerta-item";
+
+      // Opciones de recursos disponibles para el <select> de asignación
+      const opcionesRecursos = recursosDisponibles
+        .map(r => `<option value="${r.id_recurso}">${r.tipo} — ${r.placa}</option>`)
+        .join("");
+
       li.innerHTML = `
         <div class="alerta-item-top">
           <span class="alerta-tipo">${a.tipo}</span>
@@ -191,11 +237,68 @@ async function cargarAlertas() {
         </div>
         <span class="alerta-desc">${a.descripcion}</span>
         <span class="alerta-meta">${a.direccion_referencial || ""}</span>
+        <div class="alerta-item-acciones">
+          ${puedeDespachar && a.estado === "pendiente" ? `
+            <select id="selRecurso-${a.id_alerta}">
+              <option value="">Recurso disponible…</option>
+              ${opcionesRecursos}
+            </select>
+            <button class="btn-mini btn-mini-primary" onclick="asignarRecurso('${a.id_alerta}')">Asignar</button>
+          ` : ""}
+          ${puedeDespachar && a.estado === "en_atencion" ? `
+            <button class="btn-mini btn-mini-close" onclick="cerrarCaso('${a.id_alerta}')">Cerrar caso</button>
+          ` : ""}
+          <button class="btn-mini" onclick="verHistorial('${a.id_alerta}')">Historial 360°</button>
+        </div>
       `;
       lista.appendChild(li);
     });
   } catch (err) {
     console.warn("No se pudieron cargar alertas (¿backend/Cassandra activos?):", err.message);
+  }
+}
+
+// -----------------------------------------------------------
+// PUNTO 4: MATCH — asignar un recurso disponible a una alerta.
+// El backend, en el mismo request, cambia el recurso a 'ocupado'
+// ("En Emergencia") y pasa la alerta a 'en_atencion'.
+// -----------------------------------------------------------
+async function asignarRecurso(idAlerta) {
+  const select = document.getElementById(`selRecurso-${idAlerta}`);
+  const idRecurso = select ? select.value : "";
+  if (!idRecurso) {
+    alert("Selecciona un recurso disponible para asignar.");
+    return;
+  }
+  try {
+    await api(`/alertas/${idAlerta}/asignar-recurso`, {
+      method: "PUT",
+      body: JSON.stringify({ id_recurso: idRecurso })
+    });
+    cargarAlertas();
+    cargarRecursos();
+  } catch (err) {
+    alert("Error al asignar el recurso: " + err.message);
+  }
+}
+
+// -----------------------------------------------------------
+// PUNTO 4: CIERRE — libera el recurso ('disponible') y habilita
+// la carga de evidencias para ese caso.
+// -----------------------------------------------------------
+async function cerrarCaso(idAlerta) {
+  if (!confirm("Esto cerrará la alerta y liberará el recurso asignado. ¿Continuar?")) return;
+  try {
+    await api(`/alertas/${idAlerta}/estado`, {
+      method: "PUT",
+      body: JSON.stringify({ estado: "cerrada" })
+    });
+    cargarAlertas();
+    cargarRecursos();
+    cargarEvidencias();
+    alert("Caso cerrado. Ya puedes subir la evidencia desde 'Evidencias multimedia'.");
+  } catch (err) {
+    alert("Error al cerrar el caso: " + err.message);
   }
 }
 
@@ -261,13 +364,15 @@ document.getElementById("formRecurso").addEventListener("submit", async (e) => {
 async function cargarRecursos() {
   try {
     const recs = await api("/recursos");
+    recursosDisponibles = recs.filter(r => r.estado === "disponible");
+
     const tbody = document.querySelector("#tablaRecursos tbody");
     tbody.innerHTML = "";
     recs.forEach(r => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${r.id_recurso}</td><td>${r.tipo}</td><td>${r.placa}</td>
-        <td><span class="estado-tag estado-${r.estado}">${r.estado}</span></td>
+        <td><span class="estado-tag estado-${r.estado}">${r.estado === "ocupado" ? "En Emergencia" : r.estado}</span></td>
         <td><button class="btn-icon" onclick="eliminarRecurso(${r.id_recurso})">✕</button></td>
       `;
       tbody.appendChild(tr);
@@ -344,43 +449,151 @@ async function cargarSedes() {
 
 document.getElementById("formEvidencia").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const archivosTexto = document.getElementById("evArchivos").value;
-  const archivos = archivosTexto.split(",").map(s => s.trim()).filter(Boolean).map(nombre => ({
-    tipo: nombre.match(/\.(mp4|mov|avi)$/i) ? "video" : "foto",
-    url: `https://storage.sge.local/evidencias/${nombre}`,
-    nombre_archivo: nombre
-  }));
+  const inputArchivo = document.getElementById("evArchivo");
+
+  // FormData en vez de JSON: así viaja el archivo real (input type="file")
+  // junto con los campos de texto, y multer lo recibe en el backend.
+  const formData = new FormData();
+  formData.append("id_alerta", document.getElementById("evAlerta").value);
+  formData.append("descripcion", document.getElementById("evDescripcion").value);
+  if (inputArchivo.files[0]) {
+    formData.append("archivo", inputArchivo.files[0]);
+  }
 
   try {
-    await api("/evidencias", {
-      method: "POST",
-      body: JSON.stringify({
-        id_alerta: document.getElementById("evAlerta").value,
-        descripcion: document.getElementById("evDescripcion").value,
-        archivos_multimedia: archivos
-      })
-    });
+    await api("/evidencias", { method: "POST", body: formData });
     document.getElementById("formEvidencia").reset();
     cargarEvidencias();
   } catch (err) { alert(err.message); }
 });
 
 async function cargarEvidencias() {
-  // Llenar el select con alertas disponibles
+  // Llenar el select con alertas cerradas (según el flujo: primero se
+  // cierra el caso, luego se habilita subir su evidencia)
   try {
-    const alertas = await api("/alertas");
+    const cerradas = await api("/alertas/estado/cerrada");
     const select = document.getElementById("evAlerta");
-    select.innerHTML = alertas.map(a =>
-      `<option value="${a.id_alerta}">${a.tipo} — ${a.descripcion.slice(0, 40)}...</option>`
+    select.innerHTML = cerradas.map(a =>
+      `<option value="${a.id_alerta}">${a.tipo} — ${(a.descripcion || "").slice(0, 40)}</option>`
     ).join("");
-  } catch (err) { console.warn(err.message); }
 
-  // Nota: no hay endpoint de "listar todas", por diseño (Mongo se consulta por alerta).
-  // Aquí mostramos un placeholder informativo.
-  const cont = document.getElementById("listaEvidencias");
-  cont.innerHTML = `<p style="color:#576375;font-size:13px;grid-column:1/-1">
-    Selecciona una alerta arriba y guarda una evidencia para verla aquí, o consulta
-    <code style="font-family:'IBM Plex Mono',monospace;background:#0B0F14;padding:2px 6px;border-radius:4px">
-    GET /api/evidencias/alerta/:idAlerta</code>
-  </p>`;
+    const cont = document.getElementById("listaEvidencias");
+    if (cerradas.length === 0) {
+      cont.innerHTML = `<p style="color:#576375;font-size:13px;grid-column:1/-1">
+        Aún no hay casos cerrados. Cierra una alerta desde "Alertas en tiempo real" para poder subir su evidencia.</p>`;
+      return;
+    }
+
+    // Traemos las evidencias de cada alerta cerrada (consulta simple,
+    // suficiente para un proyecto académico)
+    const todas = [];
+    for (const a of cerradas) {
+      const evs = await api(`/evidencias/alerta/${a.id_alerta}`);
+      todas.push(...evs);
+    }
+
+    cont.innerHTML = todas.length === 0
+      ? `<p style="color:#576375;font-size:13px;grid-column:1/-1">Ningún caso cerrado tiene evidencia todavía.</p>`
+      : todas.map(ev => `
+        <div class="evidencia-card">
+          <div class="evidencia-id">#${ev.id_evidencia.slice(0, 8)}</div>
+          <p class="evidencia-desc">${ev.descripcion}</p>
+          <div class="evidencia-archivos">
+            ${(ev.archivos_multimedia || []).map(a => `
+              <a class="archivo-chip" href="${API_BASE.replace("/api","")}${a.ruta_archivo}" target="_blank">
+                ${a.tipo === "video" ? "🎬" : "🖼️"} ${a.nombre_archivo}
+              </a>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
+  } catch (err) { console.warn(err.message); }
 }
+
+// ---------- MÓDULO: HISTORIAL 360° ----------
+// Junta Cassandra (alerta) + Postgres/Oracle (recurso/institución) +
+// Mongo (evidencias) en un solo modal, vía GET /api/historial/:id_alerta
+
+async function cargarHistorial() {
+  try {
+    const cerradas = await api("/alertas/estado/cerrada");
+    const lista = document.getElementById("listaHistorial");
+    document.getElementById("countHistorial").textContent = cerradas.length;
+    lista.innerHTML = cerradas.length === 0
+      ? `<p style="color:#576375;font-size:13px">Todavía no hay emergencias cerradas.</p>`
+      : cerradas.map(a => `
+        <li class="alerta-item">
+          <div class="alerta-item-top">
+            <span class="alerta-tipo">${a.tipo}</span>
+            <span class="alerta-estado estado-cerrada">cerrada</span>
+          </div>
+          <span class="alerta-desc">${a.descripcion}</span>
+          <div class="alerta-item-acciones">
+            <button class="btn-mini btn-mini-primary" onclick="verHistorial('${a.id_alerta}')">Ver Historial 360°</button>
+          </div>
+        </li>
+      `).join("");
+  } catch (err) { console.warn(err.message); }
+}
+
+async function verHistorial(idAlerta) {
+  const modal = document.getElementById("modalHistorial");
+  const contenido = document.getElementById("modalHistorialContenido");
+  contenido.innerHTML = `<p style="color:var(--text-dim);font-size:13px">Cargando historial...</p>`;
+  modal.classList.remove("hidden");
+
+  try {
+    const h = await api(`/historial/${idAlerta}`);
+    const alerta = h.alerta || {};
+    const recurso = h.recurso;
+    const institucion = h.institucion;
+    const sede = h.sede;
+    const evidencias = h.evidencias || [];
+
+    contenido.innerHTML = `
+      <div class="modal-seccion">
+        <h4>Alerta (Cassandra)</h4>
+        <p><strong>${alerta.tipo || "-"}</strong> — ${alerta.descripcion || "-"}</p>
+        <p style="color:var(--text-dim);margin-top:4px">${alerta.direccion_referencial || "Sin referencia"}</p>
+      </div>
+
+      <div class="modal-seccion">
+        <h4>Recurso que atendió (PostgreSQL)</h4>
+        ${recurso
+          ? `<p>${recurso.tipo} — Placa ${recurso.placa}</p>`
+          : `<p style="color:var(--text-faint)">No se asignó ningún recurso a esta alerta.</p>`}
+      </div>
+
+      <div class="modal-seccion">
+        <h4>Institución / sede de derivación (Oracle)</h4>
+        ${institucion
+          ? `<p>${institucion.NOMBRE || institucion.nombre} ${sede ? `— ${sede.DIRECCION || sede.direccion}` : ""}</p>`
+          : `<p style="color:var(--text-faint)">No hubo derivación a ninguna institución.</p>`}
+      </div>
+
+      <div class="modal-seccion">
+        <h4>Evidencias multimedia (MongoDB)</h4>
+        ${evidencias.length === 0
+          ? `<p style="color:var(--text-faint)">Sin evidencias registradas todavía.</p>`
+          : evidencias.map(ev => `
+              <p>${ev.descripcion}</p>
+              <div class="modal-media">
+                ${(ev.archivos_multimedia || []).map(a => a.tipo === "video"
+                  ? `<video src="${API_BASE.replace("/api","")}${a.ruta_archivo}" controls></video>`
+                  : `<img src="${API_BASE.replace("/api","")}${a.ruta_archivo}" alt="${a.nombre_archivo}">`
+                ).join("")}
+              </div>
+            `).join("")}
+      </div>
+    `;
+  } catch (err) {
+    contenido.innerHTML = `<p style="color:var(--accent)">Error al cargar el historial: ${err.message}</p>`;
+  }
+}
+
+document.getElementById("btnCerrarModal").addEventListener("click", () => {
+  document.getElementById("modalHistorial").classList.add("hidden");
+});
+document.getElementById("modalHistorial").addEventListener("click", (e) => {
+  if (e.target.id === "modalHistorial") e.target.classList.add("hidden");
+});

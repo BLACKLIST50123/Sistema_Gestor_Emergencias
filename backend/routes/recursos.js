@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const pgPool = require("../config/postgres");
-const { verificarToken } = require("../services/authMiddleware");
+const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { eliminarOperadorEnCascada } = require("../services/cascadeService");
 const { sincronizarRecurso } = require("../services/syncService");
 
@@ -17,7 +17,7 @@ router.get("/operadores", async (req, res) => {
   res.json(result.rows);
 });
 
-router.post("/operadores", async (req, res) => {
+router.post("/operadores", requireRole("administrador"), async (req, res) => {
   const { nombre, usuario, contrasena, rol } = req.body;
   if (!nombre || !usuario || !contrasena) {
     return res.status(400).json({ error: "nombre, usuario y contrasena son requeridos" });
@@ -32,7 +32,7 @@ router.post("/operadores", async (req, res) => {
 });
 
 // DELETE en cascada: esto es lo que tu profe quiere ver funcionando
-router.delete("/operadores/:id", async (req, res) => {
+router.delete("/operadores/:id", requireRole("administrador"), async (req, res) => {
   const idOperador = parseInt(req.params.id, 10);
   const resultado = await eliminarOperadorEnCascada(idOperador);
   res.json({
@@ -50,7 +50,7 @@ router.get("/recursos", async (req, res) => {
   res.json(result.rows);
 });
 
-router.post("/recursos", async (req, res) => {
+router.post("/recursos", requireRole("administrador"), async (req, res) => {
   const { tipo, placa, estado } = req.body;
   const result = await pgPool.query(
     `INSERT INTO Recursos (tipo, placa, estado) VALUES ($1,$2,$3) RETURNING *`,
@@ -65,7 +65,7 @@ router.post("/recursos", async (req, res) => {
   res.status(201).json({ ...recurso, replicas });
 });
 
-router.put("/recursos/:id/estado", async (req, res) => {
+router.put("/recursos/:id/estado", requireRole("operador", "administrador"), async (req, res) => {
   const { estado } = req.body;
   const result = await pgPool.query(
     `UPDATE Recursos SET estado = $1 WHERE id_recurso = $2 RETURNING *`,
@@ -81,7 +81,7 @@ router.put("/recursos/:id/estado", async (req, res) => {
   res.json({ ...recurso, replicas });
 });
 
-router.delete("/recursos/:id", async (req, res) => {
+router.delete("/recursos/:id", requireRole("administrador"), async (req, res) => {
   const result = await pgPool.query(
     `UPDATE Recursos SET activo = FALSE WHERE id_recurso = $1 RETURNING *`,
     [req.params.id]

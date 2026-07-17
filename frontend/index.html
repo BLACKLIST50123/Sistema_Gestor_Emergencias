@@ -52,21 +52,25 @@
     </div>
 
     <nav class="nav">
-      <button class="nav-item active" data-view="alertas">
+      <button class="nav-item active" data-view="alertas" data-roles="operador,administrador">
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 2 2 20h20L12 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9v5M12 17h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <span>Alertas en tiempo real</span>
       </button>
-      <button class="nav-item" data-view="recursos">
+      <button class="nav-item" data-view="recursos" data-roles="administrador">
         <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 6V4h10v2M3 12h18" stroke="currentColor" stroke-width="1.6"/></svg>
         <span>Usuarios y recursos</span>
       </button>
-      <button class="nav-item" data-view="instituciones">
+      <button class="nav-item" data-view="instituciones" data-roles="administrador">
         <svg viewBox="0 0 24 24" fill="none"><path d="M4 21V9l8-5 8 5v12" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 21v-6h6v6" stroke="currentColor" stroke-width="1.6"/></svg>
         <span>Gestión institucional</span>
       </button>
-      <button class="nav-item" data-view="evidencias">
+      <button class="nav-item" data-view="evidencias" data-roles="operador,administrador">
         <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 21h8M12 18v3" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.4" fill="currentColor"/><path d="M4.5 16 9 11l3 3 3-4 4.5 6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
         <span>Evidencias multimedia</span>
+      </button>
+      <button class="nav-item" data-view="historial" data-roles="operador,supervisor,administrador">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>Historial 360°</span>
       </button>
     </nav>
 
@@ -102,7 +106,7 @@
     </header>
 
     <!-- ===== VISTA: ALERTAS EN TIEMPO REAL ===== -->
-    <section class="view active" id="view-alertas">
+    <section class="view active" id="view-alertas" data-roles="operador,administrador">
       <div class="alertas-layout">
         <div class="map-panel">
           <div class="map-panel-head">
@@ -159,7 +163,7 @@
     </section>
 
     <!-- ===== VISTA: USUARIOS Y RECURSOS ===== -->
-    <section class="view" id="view-recursos">
+    <section class="view" id="view-recursos" data-roles="administrador">
       <div class="two-col">
         <div class="card">
           <div class="card-head-row">
@@ -206,7 +210,7 @@
     </section>
 
     <!-- ===== VISTA: GESTIÓN INSTITUCIONAL ===== -->
-    <section class="view" id="view-instituciones">
+    <section class="view" id="view-instituciones" data-roles="administrador">
       <div class="two-col">
         <div class="card">
           <div class="card-head-row">
@@ -242,7 +246,7 @@
     </section>
 
     <!-- ===== VISTA: EVIDENCIAS MULTIMEDIA ===== -->
-    <section class="view" id="view-evidencias">
+    <section class="view" id="view-evidencias" data-roles="operador,administrador">
       <div class="card">
         <div class="card-head-row">
           <h3>Cerrar caso con evidencia</h3>
@@ -258,8 +262,8 @@
             <textarea id="evDescripcion" rows="3" placeholder="Describe cómo se resolvió el caso..." required></textarea>
           </label>
           <label class="field">
-            <span>Archivos (nombres, simulados — separados por coma)</span>
-            <input type="text" id="evArchivos" placeholder="foto1.jpg, video1.mp4">
+            <span>Archivo de evidencia (foto o video)</span>
+            <input type="file" id="evArchivo" accept="image/*,video/*">
           </label>
           <button type="submit" class="btn-primary btn-full">Guardar evidencia y cerrar caso</button>
         </form>
@@ -271,7 +275,32 @@
       </div>
     </section>
 
+    <!-- ===== VISTA: HISTORIAL 360° ===== -->
+    <section class="view" id="view-historial" data-roles="operador,supervisor,administrador">
+      <div class="card">
+        <div class="card-head-row">
+          <h3>Emergencias cerradas</h3>
+          <span class="badge" id="countHistorial">0</span>
+        </div>
+        <p class="hint">Vista de solo lectura: junta datos de Cassandra, PostgreSQL/Oracle y MongoDB para cada caso cerrado.</p>
+        <ul class="alertas-list" id="listaHistorial"></ul>
+      </div>
+    </section>
+
   </main>
+</div>
+
+<!-- ===== MODAL: HISTORIAL 360° DE UNA ALERTA ===== -->
+<div id="modalHistorial" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Historial 360° del caso</h3>
+      <button id="btnCerrarModal" class="btn-icon">✕</button>
+    </div>
+    <div id="modalHistorialContenido" class="modal-body">
+      <!-- Se llena dinámicamente desde app.js con GET /api/historial/:id_alerta -->
+    </div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

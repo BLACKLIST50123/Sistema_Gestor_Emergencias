@@ -28,6 +28,38 @@ db.createCollection("evidencias", {
           bsonType: "int",
           description: "ID del operador que cerró el caso (viene del login en PostgreSQL)"
         },
+        // -------------------------------------------------------
+        // REPLICIDAD (subdocumentos espejo): repl_operador y repl_alerta
+        // Desnormalización controlada de los dominios "Usuarios y
+        // Recursos" (Postgres) y "Alertas en Tiempo Real" (Cassandra).
+        // Se congela aquí una copia mínima al momento de crear la
+        // evidencia, para que el módulo de Evidencias pueda mostrar
+        // "quién cerró el caso" y "dónde ocurrió" sin tener que
+        // consultar Postgres/Cassandra cada vez (evita consultas
+        // cruzadas pesadas). No son "required" porque son
+        // datos de apoyo, no la clave primaria del documento; si
+        // por algún error de red no se pudieron obtener al
+        // momento de escribir, la evidencia igual se guarda.
+        // -------------------------------------------------------
+        repl_operador: {
+          bsonType: "object",
+          description: "Espejo de datos clave del Operador (dueño real: PostgreSQL)",
+          required: ["id_operador"],
+          properties: {
+            id_operador: { bsonType: "int" },
+            nombre: { bsonType: ["string", "null"] }
+          }
+        },
+        repl_alerta: {
+          bsonType: "object",
+          description: "Espejo de coordenadas básicas de la Alerta (dueño real: Cassandra)",
+          required: ["id_alerta"],
+          properties: {
+            id_alerta: { bsonType: "string" },
+            latitud: { bsonType: ["double", "null"] },
+            longitud: { bsonType: ["double", "null"] }
+          }
+        },
         archivos_multimedia: {
           bsonType: "array",
           description: "Array de objetos, cada uno una foto/video",

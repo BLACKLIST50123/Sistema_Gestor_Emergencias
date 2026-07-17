@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const pgPool = require("../config/postgres");
 const { verificarToken } = require("../services/authMiddleware");
 const { eliminarOperadorEnCascada } = require("../services/cascadeService");
+const { sincronizarRecurso } = require("../services/syncService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -55,7 +56,13 @@ router.post("/recursos", async (req, res) => {
     `INSERT INTO Recursos (tipo, placa, estado) VALUES ($1,$2,$3) RETURNING *`,
     [tipo, placa, estado || "disponible"]
   );
-  res.status(201).json(result.rows[0]);
+  const recurso = result.rows[0];
+
+  // Replicidad: apenas nace el Recurso (dueño: Postgres), se propaga
+  // su tabla espejo repl_recursos a Oracle y Cassandra.
+  const replicas = await sincronizarRecurso(recurso);
+
+  res.status(201).json({ ...recurso, replicas });
 });
 
 router.put("/recursos/:id/estado", async (req, res) => {
@@ -64,12 +71,28 @@ router.put("/recursos/:id/estado", async (req, res) => {
     `UPDATE Recursos SET estado = $1 WHERE id_recurso = $2 RETURNING *`,
     [estado, req.params.id]
   );
-  res.json(result.rows[0]);
+  const recurso = result.rows[0];
+
+  // El estado ("disponible","ocupado", etc.) es justo el campo que
+  // viven las tablas repl_recursos, así que cada cambio de estado
+  // también debe re-sincronizarse (no solo la creación).
+  const replicas = recurso ? await sincronizarRecurso(recurso) : null;
+
+  res.json({ ...recurso, replicas });
 });
 
 router.delete("/recursos/:id", async (req, res) => {
-  await pgPool.query(`UPDATE Recursos SET activo = FALSE WHERE id_recurso = $1`, [req.params.id]);
-  res.json({ mensaje: "Recurso desactivado" });
+  const result = await pgPool.query(
+    `UPDATE Recursos SET activo = FALSE WHERE id_recurso = $1 RETURNING *`,
+    [req.params.id]
+  );
+  const recurso = result.rows[0];
+
+  // Replicidad: el soft delete también se propaga a las réplicas
+  // (reusa la misma función de upsert, pasando activo = false).
+  const replicas = recurso ? await sincronizarRecurso(recurso) : null;
+
+  res.json({ mensaje: "Recurso desactivado", replicas });
 });
 
 module.exports = router;

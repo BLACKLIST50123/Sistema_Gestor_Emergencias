@@ -41,6 +41,26 @@ CREATE INDEX idx_recursos_estado ON Recursos(estado) WHERE activo = TRUE;
 CREATE INDEX idx_operadores_usuario ON Operadores(usuario) WHERE activo = TRUE;
 
 -- -------------------------------------------------
+-- REPLICIDAD (Tabla espejo): repl_instituciones
+-- Desnormalización controlada del dominio "Gestión Institucional"
+-- (dueño real: Oracle). Se guarda aquí una copia mínima de solo
+-- lectura para evitar consultas cruzadas pesadas Postgres -> Oracle
+-- cuando se necesita, por ejemplo, mostrar el nombre de la
+-- institución al lado de un Operador/Recurso.
+--
+-- id_institucion NO es SERIAL: el ID lo define siempre Oracle
+-- (la BD dueña del dato); esta tabla solo refleja, nunca origina.
+-- -------------------------------------------------
+CREATE TABLE repl_instituciones (
+    id_institucion        INTEGER      PRIMARY KEY,
+    nombre                VARCHAR(150) NOT NULL,
+    activo                BOOLEAN      NOT NULL DEFAULT TRUE,   -- espeja soft delete de Oracle
+    fecha_sincronizacion  TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_repl_instituciones_activo ON repl_instituciones(activo);
+
+-- -------------------------------------------------
 -- Tabla de auditoría: registra "quién hizo qué" (clave para tu profe)
 -- -------------------------------------------------
 CREATE TABLE Auditoria_Acciones (

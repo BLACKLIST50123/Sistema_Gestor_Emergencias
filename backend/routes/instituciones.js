@@ -2,6 +2,7 @@ const express = require("express");
 const { getOracleConnection } = require("../config/oracle");
 const { verificarToken } = require("../services/authMiddleware");
 const { eliminarInstitucionEnCascada } = require("../services/cascadeService");
+const { sincronizarInstitucion } = require("../services/syncService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -27,7 +28,15 @@ router.post("/instituciones", async (req, res) => {
        RETURNING id_institucion INTO :id`,
       { nombre, tipo, id: { dir: require("oracledb").BIND_OUT, type: require("oracledb").NUMBER } }
     );
-    res.status(201).json({ id_institucion: result.outBinds.id[0], nombre, tipo });
+    const id_institucion = result.outBinds.id[0];
+
+    // Replicidad: apenas nace la Institución (dueña: Oracle), se
+    // propaga su tabla espejo repl_instituciones a Postgres y Cassandra.
+    // No revertimos el INSERT en Oracle si esto falla (best effort);
+    // el detalle queda en "replicas" para que el frontend/logs lo vean.
+    const replicas = await sincronizarInstitucion({ id_institucion, nombre, activo: true });
+
+    res.status(201).json({ id_institucion, nombre, tipo, replicas });
   } finally {
     await conn.close();
   }

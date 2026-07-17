@@ -100,11 +100,22 @@ async function eliminarOperadorEnCascada(idOperador) {
  */
 async function eliminarInstitucionEnCascada(idInstitucion) {
   const { getOracleConnection } = require("../config/oracle");
-  const resultado = { oracle: null, cassandra: null, errores: [] };
+  const { sincronizarInstitucion } = require("./syncService");
+  const resultado = { oracle: null, cassandra: null, replicas: null, errores: [] };
 
   let conn;
   try {
     conn = await getOracleConnection();
+
+    // Necesitamos el nombre ANTES de desactivar, porque las tablas
+    // repl_instituciones (Postgres/Cassandra) también deben quedar
+    // reflejadas con activo = false (replicidad: la desactivación
+    // también se propaga, no solo la creación/actualización)
+    const institucionActual = await conn.execute(
+      `SELECT nombre FROM Instituciones WHERE id_institucion = :id`,
+      [idInstitucion]
+    );
+    const nombreInstitucion = institucionActual.rows[0]?.NOMBRE;
 
     // Traemos las sedes antes de desactivarlas, para saber qué alertas tocar
     const sedes = await conn.execute(
@@ -139,6 +150,15 @@ async function eliminarInstitucionEnCascada(idInstitucion) {
       }
     }
     resultado.cassandra = "Alertas actualizadas (derivación removida)";
+
+    // Replicidad: propagamos el soft delete a repl_instituciones
+    if (nombreInstitucion) {
+      resultado.replicas = await sincronizarInstitucion({
+        id_institucion: idInstitucion,
+        nombre: nombreInstitucion,
+        activo: false
+      });
+    }
   } catch (err) {
     resultado.errores.push(err.message);
   } finally {

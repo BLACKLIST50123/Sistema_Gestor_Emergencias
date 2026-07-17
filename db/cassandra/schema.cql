@@ -60,6 +60,36 @@ CREATE TABLE Alertas_Por_Operador (
     PRIMARY KEY (id_operador_reporta, fecha_creacion, id_alerta)
 ) WITH CLUSTERING ORDER BY (fecha_creacion DESC);
 
+-- -------------------------------------------------
+-- REPLICIDAD (Tablas espejo): repl_instituciones y repl_recursos
+-- Cassandra es el motor que más se beneficia de esto: como el
+-- dashboard de Alertas necesita mostrar en el mapa el nombre de
+-- la institución de derivación y el estado del recurso asignado,
+-- sin estas tablas espejo cada carga del mapa dispararía consultas
+-- síncronas a Oracle y Postgres (inviable con escrituras/lecturas
+-- de alto volumen). En Cassandra un INSERT con la misma partition
+-- key actúa como upsert, así que estas tablas se mantienen con
+-- INSERT normales desde el backend (ver syncService.js).
+--
+-- Igual que en los otros motores: el ID lo definen SIEMPRE las
+-- BD dueñas del dato (Oracle para instituciones, Postgres para
+-- recursos), nunca se genera aquí.
+-- -------------------------------------------------
+CREATE TABLE repl_instituciones (
+    id_institucion        INT PRIMARY KEY,
+    nombre                TEXT,
+    activo                BOOLEAN,
+    fecha_sincronizacion  TIMESTAMP
+);
+
+CREATE TABLE repl_recursos (
+    id_recurso            INT PRIMARY KEY,
+    nombre                TEXT,
+    estado                TEXT,
+    activo                BOOLEAN,
+    fecha_sincronizacion  TIMESTAMP
+);
+
 -- Nota importante para tu profe sobre "eliminar en cascada" en Cassandra:
 -- Cassandra NO tiene FOREIGN KEYS ni CASCADE. Si se elimina un Operador
 -- en PostgreSQL, el backend debe recorrer Alertas_Por_Operador con ese

@@ -32,6 +32,28 @@ CREATE TABLE Sedes_Capacidad (
 );
 
 -- -------------------------------------------------
+-- REPLICIDAD (Tabla espejo): repl_recursos
+-- Desnormalización controlada del dominio "Usuarios y Recursos"
+-- (dueño real: PostgreSQL). Copia mínima de solo lectura para
+-- que Oracle no tenga que hacer consultas cruzadas a Postgres,
+-- por ejemplo al mostrar qué Recursos tiene disponibles una Sede.
+--
+-- id_recurso NO se autogenera aquí: el ID lo define siempre
+-- PostgreSQL (la BD dueña del dato); "nombre" = tipo + placa
+-- concatenados, ya que Postgres no tiene una columna "nombre"
+-- propia en Recursos (ver backend/services/syncService.js).
+-- -------------------------------------------------
+CREATE TABLE repl_recursos (
+    id_recurso            NUMBER        PRIMARY KEY,
+    nombre                VARCHAR2(60)  NOT NULL,
+    estado                VARCHAR2(20)  NOT NULL,
+    activo                NUMBER(1) DEFAULT 1 NOT NULL,   -- espeja soft delete de Postgres
+    fecha_sincronizacion  DATE DEFAULT SYSDATE NOT NULL
+);
+
+CREATE INDEX idx_repl_recursos_activo ON repl_recursos(activo);
+
+-- -------------------------------------------------
 -- Procedimiento: descontar una cama al derivar un paciente
 -- (esto es lo que tu profe probablemente quiere ver en acción:
 --  una operación de negocio real, no solo un CRUD plano)

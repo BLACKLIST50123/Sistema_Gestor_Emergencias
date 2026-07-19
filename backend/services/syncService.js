@@ -174,7 +174,157 @@ async function sincronizarRecurso(recurso) {
   return resultado;
 }
 
+// ---------------------------------------------------------------
+// OPERADORES / USUARIOS (dueño real: PostgreSQL) -> repl_operadores
+// en Oracle y Cassandra
+// ---------------------------------------------------------------
+// Mismo patrón que Recursos: Postgres es dueño de Operadores, así
+// que cada alta/edición/baja de un Operador (usuario del sistema)
+// se espeja en Oracle y Cassandra para que ningún otro motor tenga
+// que hacer una consulta cruzada a Postgres solo para mostrar
+// "quién" hizo tal acción.
+
+async function upsertOperadorEnOracle({ id_operador, nombre, usuario, rol, activo }) {
+  const oracledb = require("oracledb");
+  const { getOracleConnection } = require("../config/oracle");
+  const conn = await getOracleConnection();
+  try {
+    await conn.execute(
+      `MERGE INTO repl_operadores r
+       USING (SELECT :id_operador AS id_operador FROM dual) src
+       ON (r.id_operador = src.id_operador)
+       WHEN MATCHED THEN UPDATE SET
+            nombre = :nombre,
+            usuario = :usuario,
+            rol = :rol,
+            activo = :activo,
+            fecha_sincronizacion = SYSDATE
+       WHEN NOT MATCHED THEN INSERT (id_operador, nombre, usuario, rol, activo, fecha_sincronizacion)
+            VALUES (:id_operador, :nombre, :usuario, :rol, :activo, SYSDATE)`,
+      {
+        id_operador,
+        nombre,
+        usuario,
+        rol,
+        activo: activo === false ? 0 : 1
+      }
+    );
+  } finally {
+    await conn.close();
+  }
+}
+
+async function upsertOperadorEnCassandra({ id_operador, nombre, usuario, rol, activo }) {
+  await cassandraClient.execute(
+    `INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo, fecha_sincronizacion)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id_operador, nombre, usuario, rol, activo !== undefined ? activo : true, new Date()],
+    { prepare: true }
+  );
+}
+
+/**
+ * Sincroniza (crea/actualiza/desactiva) la tabla espejo repl_operadores
+ * en Oracle y Cassandra a partir del registro maestro en PostgreSQL.
+ *
+ * @param {{id_operador:number, nombre:string, usuario:string, rol:string, activo?:boolean}} operador
+ * @returns {Promise<{oracle:boolean, cassandra:boolean, errores:string[]}>}
+ */
+async function sincronizarOperador(operador) {
+  const payload = {
+    id_operador: operador.id_operador,
+    nombre: operador.nombre,
+    usuario: operador.usuario,
+    rol: operador.rol,
+    activo: operador.activo
+  };
+
+  const resultado = { oracle: false, cassandra: false, errores: [] };
+
+  try {
+    await upsertOperadorEnOracle(payload);
+    resultado.oracle = true;
+  } catch (err) {
+    resultado.errores.push(`Oracle (repl_operadores): ${err.message}`);
+  }
+
+  try {
+    await upsertOperadorEnCassandra(payload);
+    resultado.cassandra = true;
+  } catch (err) {
+    resultado.errores.push(`Cassandra (repl_operadores): ${err.message}`);
+  }
+
+  if (resultado.errores.length) {
+    console.error("[syncService] sincronizarOperador con errores:", resultado.errores);
+  }
+
+  return resultado;
+}
+
+// ---------------------------------------------------------------
+// SEDES Y CAPACIDAD (dueño real: Oracle) -> repl_sedes en
+// PostgreSQL y Cassandra
+// ---------------------------------------------------------------
+
+async function upsertSedeEnPostgres({ id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo }) {
+  await pgPool.query(
+    `INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
+     ON CONFLICT (id_sede)
+     DO UPDATE SET id_institucion = EXCLUDED.id_institucion,
+                    direccion = EXCLUDED.direccion,
+                    camas_disponibles = EXCLUDED.camas_disponibles,
+                    calabozos_disponibles = EXCLUDED.calabozos_disponibles,
+                    activo = EXCLUDED.activo,
+                    fecha_sincronizacion = NOW()`,
+    [id_sede, id_institucion, direccion, camas_disponibles || 0, calabozos_disponibles || 0, activo !== undefined ? activo : true]
+  );
+}
+
+async function upsertSedeEnCassandra({ id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo }) {
+  await cassandraClient.execute(
+    `INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id_sede, id_institucion, direccion, camas_disponibles || 0, calabozos_disponibles || 0, activo !== undefined ? activo : true, new Date()],
+    { prepare: true }
+  );
+}
+
+/**
+ * Sincroniza (crea/actualiza/desactiva) la tabla espejo repl_sedes
+ * en PostgreSQL y Cassandra a partir del registro maestro en Oracle.
+ *
+ * @param {{id_sede:number, id_institucion:number, direccion:string, camas_disponibles?:number, calabozos_disponibles?:number, activo?:boolean}} sede
+ * @returns {Promise<{postgres:boolean, cassandra:boolean, errores:string[]}>}
+ */
+async function sincronizarSede(sede) {
+  const resultado = { postgres: false, cassandra: false, errores: [] };
+
+  try {
+    await upsertSedeEnPostgres(sede);
+    resultado.postgres = true;
+  } catch (err) {
+    resultado.errores.push(`Postgres (repl_sedes): ${err.message}`);
+  }
+
+  try {
+    await upsertSedeEnCassandra(sede);
+    resultado.cassandra = true;
+  } catch (err) {
+    resultado.errores.push(`Cassandra (repl_sedes): ${err.message}`);
+  }
+
+  if (resultado.errores.length) {
+    console.error("[syncService] sincronizarSede con errores:", resultado.errores);
+  }
+
+  return resultado;
+}
+
 module.exports = {
   sincronizarInstitucion,
-  sincronizarRecurso
+  sincronizarRecurso,
+  sincronizarOperador,
+  sincronizarSede
 };

@@ -1,9 +1,8 @@
 const express = require("express");
-const bcrypt = require("bcryptjs");
 const pgPool = require("../config/postgres");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { eliminarOperadorEnCascada } = require("../services/cascadeService");
-const { sincronizarRecurso } = require("../services/syncService");
+const { sincronizarRecurso, sincronizarOperador } = require("../services/syncService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -22,13 +21,57 @@ router.post("/operadores", requireRole("administrador"), async (req, res) => {
   if (!nombre || !usuario || !contrasena) {
     return res.status(400).json({ error: "nombre, usuario y contrasena son requeridos" });
   }
-  const hash = await bcrypt.hash(contrasena, 10);
   const result = await pgPool.query(
     `INSERT INTO Operadores (nombre, usuario, contrasena_hash, rol) VALUES ($1,$2,$3,$4)
-     RETURNING id_operador, nombre, usuario, rol`,
-    [nombre, usuario, hash, rol || "operador"]
+     RETURNING id_operador, nombre, usuario, rol, activo`,
+    [nombre, usuario, contrasena, rol || "operador"]
   );
-  res.status(201).json(result.rows[0]);
+  const operador = result.rows[0];
+
+  // Replicidad: apenas nace el Operador (dueño: Postgres), se propaga
+  // su tabla espejo repl_operadores a Oracle y Cassandra.
+  const replicas = await sincronizarOperador(operador);
+
+  res.status(201).json({ ...operador, replicas });
+});
+
+// PUT editar un operador existente (nombre, usuario, rol y, opcionalmente,
+// contraseña nueva). Solo el Administrador puede hacerlo. Se usa desde el
+// panel de edición de "Usuarios y recursos" en el frontend.
+router.put("/operadores/:id", requireRole("administrador"), async (req, res) => {
+  const { nombre, usuario, rol, contrasena } = req.body;
+  const idOperador = parseInt(req.params.id, 10);
+
+  if (!nombre || !usuario || !rol) {
+    return res.status(400).json({ error: "nombre, usuario y rol son requeridos" });
+  }
+
+  let result;
+  if (contrasena) {
+    result = await pgPool.query(
+      `UPDATE Operadores SET nombre = $1, usuario = $2, rol = $3, contrasena_hash = $4
+       WHERE id_operador = $5 AND activo = TRUE
+       RETURNING id_operador, nombre, usuario, rol, activo`,
+      [nombre, usuario, rol, contrasena, idOperador]
+    );
+  } else {
+    result = await pgPool.query(
+      `UPDATE Operadores SET nombre = $1, usuario = $2, rol = $3
+       WHERE id_operador = $4 AND activo = TRUE
+       RETURNING id_operador, nombre, usuario, rol, activo`,
+      [nombre, usuario, rol, idOperador]
+    );
+  }
+
+  const operador = result.rows[0];
+  if (!operador) {
+    return res.status(404).json({ error: "Operador no encontrado o inactivo" });
+  }
+
+  // Replicidad: la edición también se propaga a repl_operadores
+  const replicas = await sincronizarOperador(operador);
+
+  res.json({ ...operador, replicas });
 });
 
 // DELETE en cascada: esto es lo que tu profe quiere ver funcionando
@@ -63,6 +106,29 @@ router.post("/recursos", requireRole("administrador"), async (req, res) => {
   const replicas = await sincronizarRecurso(recurso);
 
   res.status(201).json({ ...recurso, replicas });
+});
+
+// PUT editar un recurso completo (tipo, placa, estado). Pensado para el
+// panel de edición del Administrador (distinto del PUT /estado, que usa
+// el flujo de despacho para solo cambiar el estado al asignar/liberar).
+router.put("/recursos/:id", requireRole("administrador"), async (req, res) => {
+  const { tipo, placa, estado } = req.body;
+  if (!tipo || !placa) {
+    return res.status(400).json({ error: "tipo y placa son requeridos" });
+  }
+  const result = await pgPool.query(
+    `UPDATE Recursos SET tipo = $1, placa = $2, estado = COALESCE($3, estado)
+     WHERE id_recurso = $4 AND activo = TRUE RETURNING *`,
+    [tipo, placa, estado || null, req.params.id]
+  );
+  const recurso = result.rows[0];
+  if (!recurso) {
+    return res.status(404).json({ error: "Recurso no encontrado o inactivo" });
+  }
+
+  const replicas = await sincronizarRecurso(recurso);
+
+  res.json({ ...recurso, replicas });
 });
 
 router.put("/recursos/:id/estado", requireRole("operador", "administrador"), async (req, res) => {

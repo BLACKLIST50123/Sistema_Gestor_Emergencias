@@ -90,6 +90,25 @@ CREATE TABLE repl_recursos (
     fecha_sincronizacion  TIMESTAMP
 );
 
+CREATE TABLE repl_operadores (
+    id_operador           INT PRIMARY KEY,
+    nombre                TEXT,
+    usuario               TEXT,
+    rol                   TEXT,
+    activo                BOOLEAN,
+    fecha_sincronizacion  TIMESTAMP
+);
+
+CREATE TABLE repl_sedes (
+    id_sede                INT PRIMARY KEY,
+    id_institucion         INT,
+    direccion              TEXT,
+    camas_disponibles      INT,
+    calabozos_disponibles  INT,
+    activo                 BOOLEAN,
+    fecha_sincronizacion   TIMESTAMP
+);
+
 -- Nota importante para tu profe sobre "eliminar en cascada" en Cassandra:
 -- Cassandra NO tiene FOREIGN KEYS ni CASCADE. Si se elimina un Operador
 -- en PostgreSQL, el backend debe recorrer Alertas_Por_Operador con ese

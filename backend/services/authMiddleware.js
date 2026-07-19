@@ -23,10 +23,16 @@ function verificarToken(req, res, next) {
  *
  * Uso: router.post("/recursos", requireRole("administrador"), ...)
  *
- * Los 3 roles del sistema (ver Operadores.rol en PostgreSQL):
- *   - operador       -> registra alertas, asigna recursos, sube evidencias
- *   - supervisor     -> solo lectura (historial de emergencias cerradas)
- *   - administrador  -> mantenimientos (usuarios, recursos, instituciones)
+ * Los 2 roles del sistema (ver Operadores.rol en PostgreSQL):
+ *   - operador       -> registra alertas, asigna recursos, sube evidencias,
+ *                        y además tiene acceso de SOLO LECTURA al Panel
+ *                        Supervisor y al Historial 360° (funciones que
+ *                        antes tenía un rol "supervisor" aparte, ya
+ *                        eliminado: ahora están incluidas en "operador").
+ *   - administrador  -> todo lo del operador, más el CRUD completo
+ *                        (crear/editar/eliminar) de usuarios, recursos,
+ *                        instituciones, sedes y capacidad, y el botón
+ *                        de eliminar en el Historial 360°.
  *
  * Debe usarse SIEMPRE después de verificarToken, porque depende de
  * req.operador.rol (que verificarToken saca del JWT).

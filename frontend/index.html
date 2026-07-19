@@ -52,9 +52,17 @@
     </div>
 
     <nav class="nav">
+      <button class="nav-item" data-view="supervisor" data-roles="operador,administrador">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 19V10M10 19V5M16 19v-7M22 19H2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Panel Supervisor</span>
+      </button>
       <button class="nav-item active" data-view="alertas" data-roles="operador,administrador">
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 2 2 20h20L12 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9v5M12 17h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <span>Alertas en tiempo real</span>
+      </button>
+      <button class="nav-item" data-view="despacho" data-roles="operador,administrador">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Despacho y Derivación</span>
       </button>
       <button class="nav-item" data-view="recursos" data-roles="administrador">
         <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 6V4h10v2M3 12h18" stroke="currentColor" stroke-width="1.6"/></svg>
@@ -68,7 +76,7 @@
         <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 21h8M12 18v3" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.4" fill="currentColor"/><path d="M4.5 16 9 11l3 3 3-4 4.5 6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
         <span>Evidencias multimedia</span>
       </button>
-      <button class="nav-item" data-view="historial" data-roles="operador,supervisor,administrador">
+      <button class="nav-item" data-view="historial" data-roles="operador,administrador">
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <span>Historial 360°</span>
       </button>
@@ -85,13 +93,20 @@
     </div>
   </aside>
 
+  <div id="sidebarOverlay" class="sidebar-overlay hidden"></div>
+
   <!-- Contenido -->
   <main class="main">
 
     <header class="topbar">
-      <div>
-        <p class="topbar-eyebrow" id="viewEyebrow">Módulo activo</p>
-        <h2 id="viewTitle">Alertas en tiempo real</h2>
+      <div class="topbar-left">
+        <button id="btnMenuMobile" class="btn-menu-mobile" aria-label="Abrir menú de navegación">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <div>
+          <p class="topbar-eyebrow" id="viewEyebrow">Módulo activo</p>
+          <h2 id="viewTitle">Alertas en tiempo real</h2>
+        </div>
       </div>
       <div class="topbar-user">
         <span class="pulse-live"><span></span></span>
@@ -105,60 +120,106 @@
       </div>
     </header>
 
+    <!-- ===== VISTA: PANEL SUPERVISOR ===== -->
+    <section class="view" id="view-supervisor" data-roles="operador,administrador">
+
+      <div class="supervisor-kpis">
+        <div class="supervisor-kpi">
+          <span class="kpi-label">Casos Totales</span>
+          <strong class="kpi-value" id="supTotal">0</strong>
+        </div>
+        <div class="supervisor-kpi">
+          <span class="kpi-label">Pendientes</span>
+          <strong class="kpi-value" id="supPendientes">0</strong>
+        </div>
+        <div class="supervisor-kpi">
+          <span class="kpi-label">En Atención</span>
+          <strong class="kpi-value" id="supEnAtencion">0</strong>
+        </div>
+        <div class="supervisor-kpi">
+          <span class="kpi-label">Cerrados</span>
+          <strong class="kpi-value" id="supCerradas">0</strong>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <h3>Casos por tipo de emergencia</h3>
+          <div id="supCasosPorTipo" style="margin-top: 18px;"></div>
+        </div>
+
+        <div class="card">
+          <h3>Tiempo promedio de resolución</h3>
+          <p class="hint">Desde el registro de la alerta hasta el cierre con evidencias.</p>
+          <div class="supervisor-stat-destacado">
+            <strong id="supTiempoResolucion">—</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== VISTA: ALERTAS EN TIEMPO REAL ===== -->
     <section class="view active" id="view-alertas" data-roles="operador,administrador">
-      <div class="alertas-layout">
-        <div class="map-panel">
-          <div class="map-panel-head">
-            <h3>Mapa operativo</h3>
-            <span class="hint">Clic en el mapa para registrar la ubicación de una nueva alerta</span>
-          </div>
-          <div id="mapaAlertas" class="mapa"></div>
+      
+      <div class="kpi-dashboard">
+        <div class="kpi-card totales">
+          <span class="kpi-label">Casos Totales</span>
+          <strong class="kpi-value" id="kpiTotal">0</strong>
+          <span class="kpi-trend" id="kpiTotalTrend"></span>
+        </div>
+        <div class="kpi-card warning">
+          <span class="kpi-label">Pendientes Asignación</span>
+          <strong class="kpi-value" id="kpiPendientes">0</strong>
+          <span class="kpi-trend kpi-trend-neutral">En cola ahora mismo</span>
+        </div>
+        <div class="kpi-card success">
+          <span class="kpi-label">Casos Cerrados</span>
+          <strong class="kpi-value" id="kpiCerradas">0</strong>
+          <span class="kpi-trend" id="kpiCerradasTrend"></span>
+        </div>
+      </div>
+
+      <div class="mapa-wrapper">
+        <div id="mapaAlertas" style="height: 450px; width: 100%; border-radius: 8px;"></div>
+      </div>
+
+      <div class="form-bottom-wrapper">
+        <h3>Registrar Nueva Alerta</h3>
+        <form id="formAlerta" class="inline-form" style="margin-top: 15px;">
+          <select id="alertaTipo">
+            <option value="medica">Médica</option>
+            <option value="incendio">Incendio</option>
+            <option value="seguridad">Seguridad</option>
+            <option value="accidente">Accidente</option>
+          </select>
+          <input type="text" id="alertaDescripcion" placeholder="Descripción breve" required style="flex: 2;">
+          <input type="text" id="alertaDireccion" placeholder="Dirección o referencia" required style="flex: 2;">
+          <input type="text" id="alertaLat" placeholder="Latitud" readonly required style="width: 100px; flex: none;">
+          <input type="text" id="alertaLng" placeholder="Longitud" readonly required style="width: 100px; flex: none;">
+          <button type="submit" class="btn-primary">Registrar</button>
+        </form>
+      </div>
+
+    </section>
+
+    <!-- ===== VISTA: DESPACHO Y DERIVACION ===== -->
+    <section class="view" id="view-despacho" data-roles="operador,administrador">
+
+      <div class="split-screen-container">
+        
+        <div class="split-left">
+          <h3>Cola de Emergencias</h3>
+          <p class="text-dim">Alertas esperando asignación</p>
+          <ul id="listaDespachoPendientes" class="lista-tarjetas-vertical">
+            </ul>
         </div>
 
-        <div class="alertas-side">
-          <div class="card">
-            <h3>Nueva alerta</h3>
-            <form id="formAlerta" class="stacked-form">
-              <label class="field">
-                <span>Tipo</span>
-                <select id="alertaTipo">
-                  <option value="medica">Médica</option>
-                  <option value="seguridad">Seguridad</option>
-                  <option value="incendio">Incendio</option>
-                  <option value="accidente">Accidente</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Descripción</span>
-                <textarea id="alertaDescripcion" rows="3" placeholder="Describe la situación reportada..." required></textarea>
-              </label>
-              <div class="coords-row">
-                <label class="field">
-                  <span>Latitud</span>
-                  <input type="text" id="alertaLat" placeholder="Clic en el mapa" readonly required>
-                </label>
-                <label class="field">
-                  <span>Longitud</span>
-                  <input type="text" id="alertaLng" placeholder="Clic en el mapa" readonly required>
-                </label>
-              </div>
-              <label class="field">
-                <span>Referencia (opcional)</span>
-                <input type="text" id="alertaDireccion" placeholder="Ej. Plaza de Armas, Huaraz">
-              </label>
-              <button type="submit" class="btn-primary btn-full">Registrar alerta</button>
-            </form>
-          </div>
-
-          <div class="card">
-            <div class="card-head-row">
-              <h3>Cola de alertas</h3>
-              <span class="badge" id="countAlertas">0</span>
-            </div>
-            <ul class="alertas-list" id="listaAlertas"></ul>
+        <div class="split-right">
+          <div id="panelDetalleDespacho" class="panel-detalle empty">
+            <p>Selecciona una emergencia de la cola para ver los detalles y despachar unidades.</p>
           </div>
         </div>
+
       </div>
     </section>
 
@@ -176,7 +237,6 @@
             <input type="password" id="opPassword" placeholder="contraseña" required>
             <select id="opRol">
               <option value="operador">Operador</option>
-              <option value="supervisor">Supervisor</option>
               <option value="administrador">Administrador</option>
             </select>
             <button type="submit" class="btn-primary">Agregar</button>
@@ -237,6 +297,15 @@
             <h3>Sedes y capacidad</h3>
             <span class="db-pill db-pill-ora">Oracle</span>
           </div>
+          <form id="formSede" class="inline-form">
+            <select id="sedeInstitucion"></select>
+            <input type="text" id="sedeDireccion" placeholder="Dirección" required>
+            <input type="number" id="sedeCamas" placeholder="Camas" min="0" style="width:90px;">
+            <input type="number" id="sedeCalabozos" placeholder="Calabozos" min="0" style="width:100px;">
+            <input type="text" id="sedeLat" placeholder="Latitud (opcional)" style="width:130px;">
+            <input type="text" id="sedeLng" placeholder="Longitud (opcional)" style="width:130px;">
+            <button type="submit" class="btn-primary">Agregar</button>
+          </form>
           <table class="table" id="tablaSedes">
             <thead><tr><th>ID</th><th>Dirección</th><th>Camas</th><th>Calabozos</th><th></th></tr></thead>
             <tbody></tbody>
@@ -262,9 +331,11 @@
             <textarea id="evDescripcion" rows="3" placeholder="Describe cómo se resolvió el caso..." required></textarea>
           </label>
           <label class="field">
-            <span>Archivo de evidencia (foto o video)</span>
-            <input type="file" id="evArchivo" accept="image/*,video/*">
+            <span>Archivo de evidencia (foto, video o audio)</span>
+            <input type="file" id="evArchivo" accept="image/*,video/*,audio/*" multiple onchange="previewFiles(this)">
+            <span style="font-size:11px; color:var(--text-faint);">Límites en esta demo local: fotos hasta 8MB, video hasta 25MB, audio hasta 15MB.</span>
           </label>
+          <div id="previewContainer" style="margin-top: 10px; max-width: 200px;"></div>
           <button type="submit" class="btn-primary btn-full">Guardar evidencia y cerrar caso</button>
         </form>
       </div>
@@ -276,13 +347,23 @@
     </section>
 
     <!-- ===== VISTA: HISTORIAL 360° ===== -->
-    <section class="view" id="view-historial" data-roles="operador,supervisor,administrador">
+    <section class="view" id="view-historial" data-roles="operador,administrador">
       <div class="card">
         <div class="card-head-row">
           <h3>Emergencias cerradas</h3>
           <span class="badge" id="countHistorial">0</span>
         </div>
         <p class="hint">Vista de solo lectura: junta datos de Cassandra, PostgreSQL/Oracle y MongoDB para cada caso cerrado.</p>
+        <div class="inline-form" style="margin-top: 14px;">
+          <input type="text" id="historialBusqueda" placeholder="Buscar por descripción o dirección...">
+          <select id="historialFiltroTipo">
+            <option value="">Todos los tipos</option>
+            <option value="medica">Médica</option>
+            <option value="incendio">Incendio</option>
+            <option value="seguridad">Seguridad</option>
+            <option value="accidente">Accidente</option>
+          </select>
+        </div>
         <ul class="alertas-list" id="listaHistorial"></ul>
       </div>
     </section>
@@ -292,16 +373,71 @@
 
 <!-- ===== MODAL: HISTORIAL 360° DE UNA ALERTA ===== -->
 <div id="modalHistorial" class="modal-overlay hidden">
-  <div class="modal-card">
+  <div class="modal-card modal-large">
     <div class="modal-head">
-      <h3>Historial 360° del caso</h3>
-      <button id="btnCerrarModal" class="btn-icon">✕</button>
+      <h3>Historial 360° del caso <span id="modalAlertaId" style="color:var(--text-faint); font-family:var(--font-mono); font-size:12px; margin-left:10px;"></span></h3>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button id="btnEliminarHistorialModal" class="btn-mini btn-mini-close hidden" aria-label="Eliminar emergencia del historial">Eliminar emergencia</button>
+        <button id="btnCerrarModal" class="btn-icon" aria-label="Cerrar modal de historial" onclick="document.getElementById('modalHistorial').classList.add('hidden')">✕</button>
+      </div>
     </div>
-    <div id="modalHistorialContenido" class="modal-body">
-      <!-- Se llena dinámicamente desde app.js con GET /api/historial/:id_alerta -->
+
+    <div class="modal-tabs">
+      <button class="modal-tab active" onclick="switchModalTab('info')">Información y Ubicación</button>
+      <button class="modal-tab" onclick="switchModalTab('evidencias')">Evidencias Subidas</button>
+    </div>
+
+    <div id="modalBodyContainer" class="modal-body">
+      <div id="tab-info" class="modal-tab-content active">
+        <div class="historial-grid">
+          <div class="historial-datos" id="historialDatosDiv"></div>
+          <div class="historial-mapa-container">
+            <h4 style="font-size: 11px; text-transform: uppercase; color: var(--text-faint); margin-bottom: 8px;">Ubicación Exacta</h4>
+            <div id="mapaHistorial" style="height: 250px; width: 100%; border-radius: 8px; border: 1px solid var(--border);"></div>
+          </div>
+        </div>
+      </div>
+      <div id="tab-evidencias" class="modal-tab-content hidden">
+        <div id="historialEvidenciasDiv"></div>
+      </div>
     </div>
   </div>
 </div>
+
+<!-- ===== MODAL: MODAL TABS ===== -->
+
+<!-- ===== MODAL: PANEL DE EDICIÓN (reutilizable para Operadores, Recursos, Instituciones y Sedes) ===== -->
+<div id="modalEditar" class="modal-overlay hidden">
+  <div class="modal-card modal-editar">
+    <div class="modal-head">
+      <h3 id="modalEditarTitulo">Editar</h3>
+      <button class="btn-icon" aria-label="Cancelar edición" onclick="cerrarModalEditar()">✕</button>
+    </div>
+    <form id="formEditar" class="stacked-form" style="padding: 18px;">
+      <div id="modalEditarCampos" style="display:flex; flex-direction:column; gap:14px;"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top: 6px;">
+        <button type="button" class="btn-ghost" onclick="cerrarModalEditar()">Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar cambios</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== MODAL: CONFIRMACIÓN (reemplaza confirm() nativo) ===== -->
+<div id="modalConfirm" class="modal-overlay hidden">
+  <div class="modal-card modal-confirm">
+    <div class="modal-confirm-body">
+      <p class="modal-confirm-msg" id="modalConfirmMensaje"></p>
+      <div class="modal-confirm-acciones">
+        <button id="btnConfirmCancelar" class="btn-ghost">Cancelar</button>
+        <button id="btnConfirmAceptar" class="btn-primary">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== NOTIFICACIONES (reemplazan alert() nativo) ===== -->
+<div id="toastContainer" class="toast-container"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="app.js"></script>

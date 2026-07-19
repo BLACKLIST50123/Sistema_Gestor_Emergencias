@@ -15,7 +15,15 @@ CREATE TABLE Operadores (
     usuario         VARCHAR(60)  NOT NULL UNIQUE,
     contrasena_hash VARCHAR(255) NOT NULL,      -- guardar SIEMPRE hash (bcrypt), nunca texto plano
     rol             VARCHAR(30)  NOT NULL DEFAULT 'operador'
-                    CHECK (rol IN ('operador','supervisor','administrador')),
+                    CHECK (rol IN ('operador','administrador')),
+                    -- Desde v2 el sistema trabaja con 2 roles: 'operador'
+                    -- (incluye ahora las funciones que antes tenía
+                    -- 'supervisor': lectura del Historial 360° y del
+                    -- Panel Supervisor) y 'administrador' (control total,
+                    -- incluye CRUD de usuarios/recursos/instituciones/
+                    -- sedes y borrado en Historial). Si vienes de la v1
+                    -- con datos ya cargados, corre antes
+                    -- db/postgres/migration_2_roles.sql.
     activo          BOOLEAN      NOT NULL DEFAULT TRUE,   -- soft delete: nunca DELETE físico
     fecha_creacion  TIMESTAMP    NOT NULL DEFAULT NOW(),
     fecha_baja      TIMESTAMP    NULL
@@ -59,6 +67,25 @@ CREATE TABLE repl_instituciones (
 );
 
 CREATE INDEX idx_repl_instituciones_activo ON repl_instituciones(activo);
+
+-- -------------------------------------------------
+-- REPLICIDAD (Tabla espejo): repl_sedes
+-- Igual patrón que repl_instituciones: dueña real = Oracle
+-- (Sedes_Capacidad). Se guarda aquí una copia mínima de solo
+-- lectura para el módulo de Despacho (necesita mostrar camas/
+-- calabozos disponibles sin ir a consultar Oracle cada vez).
+-- -------------------------------------------------
+CREATE TABLE repl_sedes (
+    id_sede               INTEGER      PRIMARY KEY,
+    id_institucion        INTEGER      NOT NULL,
+    direccion             VARCHAR(200) NOT NULL,
+    camas_disponibles     INTEGER      NOT NULL DEFAULT 0,
+    calabozos_disponibles INTEGER      NOT NULL DEFAULT 0,
+    activo                BOOLEAN      NOT NULL DEFAULT TRUE,
+    fecha_sincronizacion  TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_repl_sedes_activo ON repl_sedes(activo);
 
 -- -------------------------------------------------
 -- Tabla de auditoría: registra "quién hizo qué" (clave para tu profe)

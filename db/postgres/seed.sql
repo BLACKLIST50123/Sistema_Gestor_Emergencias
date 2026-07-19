@@ -6,11 +6,11 @@
 -- =========================================================
 
 INSERT INTO Operadores (nombre, usuario, contrasena_hash, rol) VALUES
-('María Fernández Soto',   'mfernandez', '$2b$10$PLACEHOLDER_HASH_1', 'administrador'),
-('Carlos Ramírez Quiroz',  'cramirez',   '$2b$10$PLACEHOLDER_HASH_2', 'supervisor'),
-('Ana Lucía Torres',       'atorres',    '$2b$10$PLACEHOLDER_HASH_3', 'operador'),
-('Jorge Luis Medina',      'jmedina',    '$2b$10$PLACEHOLDER_HASH_4', 'operador'),
-('Patricia Rojas Vega',    'projas',     '$2b$10$PLACEHOLDER_HASH_5', 'operador');
+('María Fernández Soto',   'mfernandez', '50123', 'administrador'),
+('Carlos Ramírez Quiroz',  'cramirez',   '50123', 'operador'),
+('Ana Lucía Torres',       'atorres',    '50123', 'operador'),
+('Jorge Luis Medina',      'jmedina',    '50123', 'operador'),
+('Patricia Rojas Vega',    'projas',     '50123', 'operador');
 
 INSERT INTO Recursos (tipo, placa, estado, id_operador_asignado) VALUES
 ('ambulancia', 'AMB-101', 'disponible', NULL),

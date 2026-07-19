@@ -54,6 +54,30 @@ CREATE TABLE repl_recursos (
 CREATE INDEX idx_repl_recursos_activo ON repl_recursos(activo);
 
 -- -------------------------------------------------
+-- REPLICIDAD (Tabla espejo): repl_operadores
+-- Desnormalización controlada del dominio "Usuarios y Recursos"
+-- (dueño real: PostgreSQL, tabla Operadores). Copia mínima de solo
+-- lectura para que, por ejemplo, el módulo de Gestión Institucional
+-- pueda mostrar "qué Operador hizo tal derivación" sin consultar
+-- Postgres cada vez.
+--
+-- id_operador NO se autogenera aquí: el ID lo define siempre
+-- PostgreSQL (la BD dueña del dato). No se replica la contraseña
+-- (nunca, ni siquiera el hash): esta tabla es solo para mostrar
+-- nombre/usuario/rol, no para autenticar.
+-- -------------------------------------------------
+CREATE TABLE repl_operadores (
+    id_operador           NUMBER        PRIMARY KEY,
+    nombre                VARCHAR2(120) NOT NULL,
+    usuario               VARCHAR2(60)  NOT NULL,
+    rol                   VARCHAR2(30)  NOT NULL,
+    activo                NUMBER(1) DEFAULT 1 NOT NULL,   -- espeja soft delete de Postgres
+    fecha_sincronizacion  DATE DEFAULT SYSDATE NOT NULL
+);
+
+CREATE INDEX idx_repl_operadores_activo ON repl_operadores(activo);
+
+-- -------------------------------------------------
 -- Procedimiento: descontar una cama al derivar un paciente
 -- (esto es lo que tu profe probablemente quiere ver en acción:
 --  una operación de negocio real, no solo un CRUD plano)

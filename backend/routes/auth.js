@@ -24,7 +24,8 @@ router.post("/login", async (req, res) => {
     }
 
     const operador = result.rows[0];
-    const passwordOk = await bcrypt.compare(contrasena, operador.contrasena_hash);
+    // Sin hash: comparación directa en texto plano (solo demo local).
+    const passwordOk = contrasena === operador.contrasena_hash;
     if (!passwordOk) {
       return res.status(401).json({ error: "Credenciales inválidas" });
     }

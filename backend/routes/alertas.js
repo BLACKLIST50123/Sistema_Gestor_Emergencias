@@ -4,6 +4,7 @@ const cassandraClient = require("../config/cassandra");
 const pgPool = require("../config/postgres");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { sincronizarRecurso } = require("../services/syncService");
+const { eliminarAlertaEnCascada } = require("../services/cascadeService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -117,24 +118,52 @@ router.put("/alertas/:id/asignar-recurso", requireRole("operador", "administrado
 router.put("/alertas/:id/estado", requireRole("operador", "administrador"), async (req, res) => {
   const { estado } = req.body;
   const id_alerta = req.params.id;
+  const ahora = new Date();
 
-  await cassandraClient.execute(
-    `UPDATE Alertas SET estado = ?, fecha_actualizacion = ? WHERE id_alerta = ?`,
-    [estado, new Date(), id_alerta],
+  // 1) Obtener los datos actuales de la alerta ANTES de actualizarla
+  const alertaResult = await cassandraClient.execute(
+    `SELECT * FROM Alertas WHERE id_alerta = ?`,
+    [id_alerta],
     { prepare: true }
   );
+  
+  const alerta = alertaResult.rows[0];
+  if (!alerta) {
+    return res.status(404).json({ error: "Alerta no encontrada" });
+  }
 
+  const estadoAnterior = alerta.estado;
+
+  // 2) Armar el Batch para actualizar Cassandra correctamente en sus 3 tablas
+  const batch = [
+    {
+      query: `UPDATE Alertas SET estado = ?, fecha_actualizacion = ? WHERE id_alerta = ?`,
+      params: [estado, ahora, id_alerta]
+    },
+    // Insertamos la alerta en su "nuevo" estado para que aparezca en la lista
+    {
+      query: `INSERT INTO Alertas_Por_Estado (estado, fecha_creacion, id_alerta, tipo, latitud, longitud, descripcion) VALUES (?,?,?,?,?,?,?)`,
+      params: [estado, alerta.fecha_creacion, id_alerta, alerta.tipo, alerta.latitud, alerta.longitud, alerta.descripcion]
+    },
+    // Borramos la alerta de su "viejo" estado para que no quede duplicada
+    {
+      query: `DELETE FROM Alertas_Por_Estado WHERE estado = ? AND fecha_creacion = ? AND id_alerta = ?`,
+      params: [estadoAnterior, alerta.fecha_creacion, id_alerta]
+    },
+    // Actualizamos también la tabla por operador
+    {
+      query: `INSERT INTO Alertas_Por_Operador (id_operador_reporta, fecha_creacion, id_alerta, tipo, estado) VALUES (?,?,?,?,?)`,
+      params: [alerta.id_operador_reporta, alerta.fecha_creacion, id_alerta, alerta.tipo, estado]
+    }
+  ];
+
+  await cassandraClient.batch(batch, { prepare: true });
+
+  // 3) Lógica para liberar el recurso en Postgres (se mantiene igual)
   let recursoLiberado = null;
 
-  // Cierre: al cerrar la alerta se libera el recurso asignado
-  // (vuelve a 'disponible') para que quede libre para otra emergencia.
   if (estado === "cerrada") {
-    const alertaResult = await cassandraClient.execute(
-      `SELECT id_recurso_asignado FROM Alertas WHERE id_alerta = ?`,
-      [id_alerta],
-      { prepare: true }
-    );
-    const idRecursoAsignado = alertaResult.rows[0]?.id_recurso_asignado;
+    const idRecursoAsignado = alerta.id_recurso_asignado;
 
     if (idRecursoAsignado) {
       const recursoResult = await pgPool.query(
@@ -143,18 +172,17 @@ router.put("/alertas/:id/estado", requireRole("operador", "administrador"), asyn
       );
       recursoLiberado = recursoResult.rows[0] || null;
       if (recursoLiberado) {
+        const { sincronizarRecurso } = require("../services/syncService");
         await sincronizarRecurso(recursoLiberado);
       }
     }
   }
 
   res.json({
-    mensaje: "Estado actualizado",
+    mensaje: "Estado actualizado y replicado en Cassandra",
     id_alerta,
     estado,
     recursoLiberado,
-    // El frontend usa esta bandera para habilitar el botón
-    // "Subir evidencia" apenas se cierra el caso.
     habilitarEvidencias: estado === "cerrada"
   });
 });
@@ -222,6 +250,22 @@ router.get("/historial/:id_alerta", async (req, res) => {
     .toArray();
 
   res.json(historial);
+});
+
+// -----------------------------------------------------------
+// DELETE de una emergencia del Historial 360° — SOLO Administrador.
+// El Operador puede VER el historial pero no eliminar (regla de
+// negocio pedida: "el operador solo ver no eliminar"). Se apoya en
+// cascadeService.eliminarAlertaEnCascada, que borra la fila en las
+// 3 tablas de Cassandra y desactiva (soft delete) las evidencias
+// asociadas en MongoDB.
+// -----------------------------------------------------------
+router.delete("/alertas/:id", requireRole("administrador"), async (req, res) => {
+  const resultado = await eliminarAlertaEnCascada(req.params.id);
+  if (resultado.errores.length && !resultado.cassandra) {
+    return res.status(404).json({ error: "No se pudo eliminar la alerta", detalle: resultado });
+  }
+  res.json({ mensaje: "Emergencia eliminada del historial", detalle: resultado });
 });
 
 module.exports = router;

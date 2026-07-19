@@ -30,10 +30,12 @@ const { getMongoDb } = require("../config/mongodb");
  * en las 4 bases de datos.
  */
 async function eliminarOperadorEnCascada(idOperador) {
+  const { sincronizarOperador } = require("./syncService");
   const resultado = {
     postgres: null,
     cassandra: null,
     mongodb: null,
+    replicas: null,
     errores: []
   };
 
@@ -52,6 +54,17 @@ async function eliminarOperadorEnCascada(idOperador) {
       `UPDATE Recursos SET id_operador_asignado = NULL WHERE id_operador_asignado = $1`,
       [idOperador]
     );
+
+    // Replicidad: la baja también se propaga a repl_operadores (Oracle/Cassandra)
+    if (resultado.postgres) {
+      resultado.replicas = await sincronizarOperador({
+        id_operador: resultado.postgres.id_operador,
+        nombre: resultado.postgres.nombre,
+        usuario: resultado.postgres.usuario,
+        rol: resultado.postgres.rol,
+        activo: false
+      });
+    }
   } catch (err) {
     resultado.errores.push(`PostgreSQL: ${err.message}`);
   }
@@ -100,8 +113,8 @@ async function eliminarOperadorEnCascada(idOperador) {
  */
 async function eliminarInstitucionEnCascada(idInstitucion) {
   const { getOracleConnection } = require("../config/oracle");
-  const { sincronizarInstitucion } = require("./syncService");
-  const resultado = { oracle: null, cassandra: null, replicas: null, errores: [] };
+  const { sincronizarInstitucion, sincronizarSede } = require("./syncService");
+  const resultado = { oracle: null, cassandra: null, replicas: null, replicasSedes: [], errores: [] };
 
   let conn;
   try {
@@ -117,9 +130,11 @@ async function eliminarInstitucionEnCascada(idInstitucion) {
     );
     const nombreInstitucion = institucionActual.rows[0]?.NOMBRE;
 
-    // Traemos las sedes antes de desactivarlas, para saber qué alertas tocar
+    // Traemos las sedes ANTES de desactivarlas: necesitamos sus datos
+    // completos (no solo el id) para poder espejar el soft delete en
+    // repl_sedes (Postgres/Cassandra), igual que se hace con la institución.
     const sedes = await conn.execute(
-      `SELECT id_sede FROM Sedes_Capacidad WHERE id_institucion = :id`,
+      `SELECT id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles FROM Sedes_Capacidad WHERE id_institucion = :id`,
       [idInstitucion]
     );
 
@@ -148,6 +163,17 @@ async function eliminarInstitucionEnCascada(idInstitucion) {
           { prepare: true }
         );
       }
+
+      // Replicidad: propagamos el soft delete de esta sede a repl_sedes
+      const replicaSede = await sincronizarSede({
+        id_sede: sede.ID_SEDE,
+        id_institucion: sede.ID_INSTITUCION,
+        direccion: sede.DIRECCION,
+        camas_disponibles: sede.CAMAS_DISPONIBLES,
+        calabozos_disponibles: sede.CALABOZOS_DISPONIBLES,
+        activo: false
+      });
+      resultado.replicasSedes.push({ id_sede: sede.ID_SEDE, ...replicaSede });
     }
     resultado.cassandra = "Alertas actualizadas (derivación removida)";
 
@@ -168,4 +194,63 @@ async function eliminarInstitucionEnCascada(idInstitucion) {
   return resultado;
 }
 
-module.exports = { eliminarOperadorEnCascada, eliminarInstitucionEnCascada };
+/**
+ * Elimina una Alerta (emergencia) del Historial 360°.
+ *
+ * Solo tiene sentido para casos ya CERRADOS (el frontend solo ofrece
+ * este botón al Administrador dentro de la vista de Historial). Como
+ * Alertas vive en Cassandra y no tiene tablas repl_* en otros motores
+ * (nadie más "posee" una copia de la alerta en sí, solo referencias
+ * lógicas por id), la cascada aquí es:
+ *   1) Cassandra: borrar la fila de las 3 tablas de consulta
+ *      (Alertas, Alertas_Por_Estado, Alertas_Por_Operador) — hay que
+ *      leer primero la fila porque las 2 últimas usan más columnas
+ *      en su clustering key / partition key.
+ *   2) MongoDB: desactivar (soft delete) las evidencias asociadas a
+ *      esa alerta, para no dejar evidencia "huérfana" apuntando a un
+ *      caso que ya no existe en el Historial.
+ */
+async function eliminarAlertaEnCascada(idAlerta) {
+  const resultado = { cassandra: null, mongodb: null, errores: [] };
+
+  try {
+    const alertaResult = await cassandraClient.execute(
+      `SELECT * FROM Alertas WHERE id_alerta = ?`,
+      [idAlerta],
+      { prepare: true }
+    );
+    const alerta = alertaResult.rows[0];
+
+    if (!alerta) {
+      resultado.errores.push("La alerta no existe o ya fue eliminada");
+      return resultado;
+    }
+
+    const batch = [
+      { query: `DELETE FROM Alertas WHERE id_alerta = ?`, params: [idAlerta] },
+      {
+        query: `DELETE FROM Alertas_Por_Estado WHERE estado = ? AND fecha_creacion = ? AND id_alerta = ?`,
+        params: [alerta.estado, alerta.fecha_creacion, idAlerta]
+      },
+      {
+        query: `DELETE FROM Alertas_Por_Operador WHERE id_operador_reporta = ? AND fecha_creacion = ? AND id_alerta = ?`,
+        params: [alerta.id_operador_reporta, alerta.fecha_creacion, idAlerta]
+      }
+    ];
+    await cassandraClient.batch(batch, { prepare: true });
+    resultado.cassandra = { eliminada: true };
+
+    const db = getMongoDb();
+    const r = await db.collection("evidencias").updateMany(
+      { id_alerta: idAlerta },
+      { $set: { activo: false, fecha_baja: new Date() } }
+    );
+    resultado.mongodb = { evidenciasAfectadas: r.modifiedCount };
+  } catch (err) {
+    resultado.errores.push(err.message);
+  }
+
+  return resultado;
+}
+
+module.exports = { eliminarOperadorEnCascada, eliminarInstitucionEnCascada, eliminarAlertaEnCascada };

@@ -139,11 +139,11 @@ async function eliminarInstitucionEnCascada(idInstitucion) {
     );
 
     await conn.execute(
-      `UPDATE Sedes_Capacidad SET activo = 0 WHERE id_institucion = :id`,
+      `UPDATE Sedes_Capacidad SET activo = FALSE WHERE id_institucion = :id`,
       [idInstitucion]
     );
     await conn.execute(
-      `UPDATE Instituciones SET activo = 0 WHERE id_institucion = :id`,
+      `UPDATE Instituciones SET activo = FALSE WHERE id_institucion = :id`,
       [idInstitucion]
     );
     // DELETE físico alternativo (requiere borrar primero sedes por FK):

@@ -37,7 +37,7 @@ chmod +x init-db.sh
 
 Esto te deja:
 - PostgreSQL en `localhost:5432` (BD `sge_usuarios_recursos`)
-- Oracle en `localhost:1521` (servicio `XEPDB1`, usuario `sge_user`)
+- Oracle en `localhost:1521` (servicio `FREEPDB1`, usuario `sge_user`)
 - Cassandra en `localhost:9042` (keyspace `sge_alertas`)
 - MongoDB en `localhost:27017` (BD `sge_evidencias`)
 

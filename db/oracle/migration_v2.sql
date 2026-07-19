@@ -13,7 +13,7 @@ CREATE TABLE repl_operadores (
     nombre                VARCHAR2(120) NOT NULL,
     usuario               VARCHAR2(60)  NOT NULL,
     rol                   VARCHAR2(30)  NOT NULL,
-    activo                NUMBER(1) DEFAULT 1 NOT NULL,
+    activo                BOOLEAN DEFAULT TRUE NOT NULL,
     fecha_sincronizacion  DATE DEFAULT SYSDATE NOT NULL
 );
 

@@ -180,7 +180,30 @@
       </div>
 
       <div class="mapa-wrapper">
+        <div class="card-head-row" style="margin-bottom:10px;">
+          <h3 style="margin-bottom:0;">Mapa de alertas y sedes</h3>
+          <button type="button" class="btn-refresh" id="btnActualizarMapa" aria-label="Actualizar mapa">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            Actualizar
+          </button>
+        </div>
         <div id="mapaAlertas" style="height: 450px; width: 100%; border-radius: 8px;"></div>
+
+        <div class="mapa-leyenda" id="mapaLeyenda">
+          <div class="leyenda-grupo">
+            <span class="leyenda-titulo">Sedes</span>
+            <span class="leyenda-item"><span class="leyenda-dot" style="background:#FFFFFF;border:1.5px solid #8493A6;"></span>Hospitales</span>
+            <span class="leyenda-item"><span class="leyenda-dot" style="background:#2F6FFA;"></span>Comisarías</span>
+            <span class="leyenda-item"><span class="leyenda-dot" style="background:#E63946;"></span>Bomberos</span>
+          </div>
+          <div class="leyenda-grupo">
+            <span class="leyenda-titulo">Alertas</span>
+            <span class="leyenda-item"><span class="leyenda-dot" style="background:#FFC93C;"></span>Médica</span>
+            <span class="leyenda-item"><span class="leyenda-dot" style="background:#FF7A1A;"></span>Incendio</span>
+            <span class="leyenda-item"><span class="leyenda-dot" style="background:#8B5CF6;"></span>Seguridad</span>
+            <span class="leyenda-item"><span class="leyenda-dot" style="background:#22D3B5;"></span>Accidente</span>
+          </div>
+        </div>
       </div>
 
       <div class="form-bottom-wrapper">
@@ -208,7 +231,12 @@
       <div class="split-screen-container">
         
         <div class="split-left">
-          <h3>Cola de Emergencias</h3>
+          <div class="card-head-row" style="margin-bottom:0;">
+            <h3>Cola de Emergencias</h3>
+            <button type="button" class="btn-refresh" id="btnActualizarDespacho" aria-label="Actualizar cola de emergencias">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            </button>
+          </div>
           <p class="text-dim">Alertas esperando asignación</p>
           <ul id="listaDespachoPendientes" class="lista-tarjetas-vertical">
             </ul>
@@ -229,7 +257,12 @@
         <div class="card">
           <div class="card-head-row">
             <h3>Operadores</h3>
-            <span class="db-pill db-pill-pg">PostgreSQL</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="db-pill db-pill-pg">PostgreSQL</span>
+              <button type="button" class="btn-refresh" id="btnActualizarOperadores" aria-label="Actualizar operadores">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              </button>
+            </div>
           </div>
           <form id="formOperador" class="inline-form">
             <input type="text" id="opNombre" placeholder="Nombre completo" required>
@@ -250,7 +283,12 @@
         <div class="card">
           <div class="card-head-row">
             <h3>Recursos</h3>
-            <span class="db-pill db-pill-pg">PostgreSQL</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="db-pill db-pill-pg">PostgreSQL</span>
+              <button type="button" class="btn-refresh" id="btnActualizarRecursos" aria-label="Actualizar recursos">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              </button>
+            </div>
           </div>
           <form id="formRecurso" class="inline-form">
             <select id="recTipo">
@@ -275,7 +313,12 @@
         <div class="card">
           <div class="card-head-row">
             <h3>Instituciones</h3>
-            <span class="db-pill db-pill-ora">Oracle</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="db-pill db-pill-ora">Oracle</span>
+              <button type="button" class="btn-refresh" id="btnActualizarInstituciones" aria-label="Actualizar instituciones">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              </button>
+            </div>
           </div>
           <form id="formInstitucion" class="inline-form">
             <input type="text" id="instNombre" placeholder="Nombre de la institución" required>
@@ -295,22 +338,43 @@
         <div class="card">
           <div class="card-head-row">
             <h3>Sedes y capacidad</h3>
-            <span class="db-pill db-pill-ora">Oracle</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="db-pill db-pill-ora">Oracle</span>
+              <button type="button" class="btn-refresh" id="btnActualizarSedes" aria-label="Actualizar sedes">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              </button>
+            </div>
           </div>
           <form id="formSede" class="inline-form">
             <select id="sedeInstitucion"></select>
             <input type="text" id="sedeDireccion" placeholder="Dirección" required>
-            <input type="number" id="sedeCamas" placeholder="Camas" min="0" style="width:90px;">
-            <input type="number" id="sedeCalabozos" placeholder="Calabozos" min="0" style="width:100px;">
-            <input type="text" id="sedeLat" placeholder="Latitud (opcional)" style="width:130px;">
-            <input type="text" id="sedeLng" placeholder="Longitud (opcional)" style="width:130px;">
-            <button type="submit" class="btn-primary">Agregar</button>
+            <input type="number" id="sedeCamas" placeholder="Camas" min="0" style="width:90px;" disabled>
+            <input type="number" id="sedeCalabozos" placeholder="Calabozos" min="0" style="width:100px;" disabled>
+            <div class="geo-picker-field">
+              <span id="sedeGeoGuia" class="geo-picker-guia">Presione "Agregar" para seleccionar la ubicación de la SEDE</span>
+              <span id="sedeGeoResumen" class="geo-picker-resumen hidden"></span>
+              <input type="hidden" id="sedeLat">
+              <input type="hidden" id="sedeLng">
+              <button type="button" class="btn-ghost" id="btnAbrirGeoSede">Agregar</button>
+            </div>
+            <button type="submit" class="btn-primary">Agregar sede</button>
           </form>
           <table class="table" id="tablaSedes">
             <thead><tr><th>ID</th><th>Dirección</th><th>Camas</th><th>Calabozos</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <div class="card-head-row">
+          <h3>Relación institucional</h3>
+          <span class="hint">Institución ↔ sede, con su capacidad asociada</span>
+        </div>
+        <table class="table" id="tablaRelacionInstitucional">
+          <thead><tr><th>N°</th><th>Institución</th><th>Tipo</th><th>Dirección</th><th>Camas</th><th>Calabozos</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
 
@@ -341,7 +405,12 @@
       </div>
 
       <div class="card">
-        <h3>Evidencias registradas</h3>
+        <div class="card-head-row">
+          <h3>Evidencias registradas</h3>
+          <button type="button" class="btn-refresh" id="btnActualizarEvidencias" aria-label="Actualizar evidencias">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+          </button>
+        </div>
         <div id="listaEvidencias" class="evidencias-grid"></div>
       </div>
     </section>
@@ -351,7 +420,12 @@
       <div class="card">
         <div class="card-head-row">
           <h3>Emergencias cerradas</h3>
-          <span class="badge" id="countHistorial">0</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge" id="countHistorial">0</span>
+            <button type="button" class="btn-refresh" id="btnActualizarHistorial" aria-label="Actualizar historial">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            </button>
+          </div>
         </div>
         <p class="hint">Vista de solo lectura: junta datos de Cassandra, PostgreSQL/Oracle y MongoDB para cada caso cerrado.</p>
         <div class="inline-form" style="margin-top: 14px;">
@@ -405,6 +479,28 @@
 </div>
 
 <!-- ===== MODAL: MODAL TABS ===== -->
+
+<!-- ===== MODAL: GEOLOCALIZACIÓN (selección de ubicación de Sede) ===== -->
+<div id="modalGeo" class="modal-overlay hidden">
+  <div class="modal-card modal-geo">
+    <div class="modal-head">
+      <h3>Seleccionar ubicación de la sede</h3>
+      <button class="btn-icon" aria-label="Cancelar selección de ubicación" onclick="cerrarModalGeo()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="hint">Haz clic en el mapa en el punto exacto donde se ubica la sede.</p>
+      <div id="mapaGeoPicker" style="height: 320px; width: 100%; border-radius: 8px; border: 1px solid var(--border);"></div>
+      <div class="geo-picker-coords">
+        <label class="field"><span>Latitud</span><input type="text" id="geoPickerLat" readonly placeholder="—"></label>
+        <label class="field"><span>Longitud</span><input type="text" id="geoPickerLng" readonly placeholder="—"></label>
+      </div>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button type="button" class="btn-ghost" onclick="cerrarModalGeo()">Cancelar</button>
+        <button type="button" class="btn-primary" id="btnConfirmarGeo" disabled>Confirmar ubicación</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ===== MODAL: PANEL DE EDICIÓN (reutilizable para Operadores, Recursos, Instituciones y Sedes) ===== -->
 <div id="modalEditar" class="modal-overlay hidden">

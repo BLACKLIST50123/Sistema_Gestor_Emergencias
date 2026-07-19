@@ -33,6 +33,31 @@ let cacheRecursos = [];
 let cacheInstituciones = [];
 let cacheSedes = [];
 
+// -----------------------------------------------------------
+// PUNTO 2: Colores fijos del mapa (Sedes) y colores de Alertas
+// (siempre distintos entre sí, para que la leyenda no se confunda)
+// -----------------------------------------------------------
+const COLOR_SEDE_POR_TIPO = {
+  Hospital: "#FFFFFF",
+  Comisaria: "#2F6FFA",
+  Bomberos: "#E63946"
+};
+const COLOR_ALERTA_POR_TIPO = {
+  medica: "#FFC93C",
+  incendio: "#FF7A1A",
+  seguridad: "#8B5CF6",
+  accidente: "#22D3B5"
+};
+const marcadoresSedes = {};
+
+// -----------------------------------------------------------
+// PUNTO 4: Reactividad — polling corto para mantener datos frescos
+// sin recargar la página, complementado con botones "Actualizar"
+// manuales en cada módulo (ver más abajo, sección REACTIVIDAD).
+// -----------------------------------------------------------
+const POLLING_MS = 9000;
+let pollingHandle = null;
+
 function esAdministrador() {
   return OPERADOR && OPERADOR.rol === "administrador";
 }
@@ -178,6 +203,12 @@ async function entrarAApp() {
   cargarEvidencias();
   cargarHistorial();
   cargarPanelSupervisor();
+
+  // PUNTO 4: arranca el polling corto apenas hay sesión activa
+  // (iniciarPolling se declara más abajo en este archivo, pero las
+  // funciones declaradas con "function" quedan disponibles en todo
+  // el script gracias al hoisting).
+  iniciarPolling();
 }
 
 // -----------------------------------------------------------
@@ -251,6 +282,32 @@ function initMapa() {
   });
 }
 
+// -----------------------------------------------------------
+// PUNTO 2: Marcadores de Sedes en el mapa de Alertas
+// -----------------------------------------------------------
+// Pinta un pin de color FIJO según el tipo de institución dueña de
+// la sede: Hospitales = blanco, Comisarías = azul, Bomberos = rojo.
+// Estos colores nunca cambian (a diferencia de las Alertas, que
+// usan un color por tipo de emergencia) y son distintos entre sí
+// para que la leyenda del módulo tenga sentido.
+function renderizarMarcadoresSedes() {
+  if (!mapa) return;
+  Object.values(marcadoresSedes).forEach(m => mapa.removeLayer(m));
+
+  cacheSedes.forEach(s => {
+    if (s.latitud == null || s.longitud == null) return;
+    const color = COLOR_SEDE_POR_TIPO[s.tipo_institucion] || "#8493A6";
+    const marker = L.circleMarker([s.latitud, s.longitud], {
+      radius: 7, color: "#12181f", weight: 1.5, fillColor: color, fillOpacity: 0.95
+    }).addTo(mapa).bindPopup(
+      `<strong>${s.nombre_institucion || "Sede"}</strong><br>` +
+      `<span style="color:#8493A6;font-size:11px">${s.tipo_institucion || ""}</span><br>` +
+      `${s.direccion || ""}`
+    );
+    marcadoresSedes[s.id_sede] = marker;
+  });
+}
+
 document.getElementById("formAlerta").addEventListener("submit", async (e) => {
   e.preventDefault();
   const lat = document.getElementById("alertaLat").value;
@@ -293,7 +350,7 @@ async function cargarAlertas() {
     if (elTrendCerradas) elTrendCerradas.innerHTML = renderTendenciaHTML(trendCerradas, "cerrados hoy");
 
     alertas.filter(a => a.estado !== "cerrada").forEach(a => {
-      const color = { medica: "#4C8DFF", seguridad: "#7C5CFF", incendio: "#FF5A3C", accidente: "#FF8A3D" }[a.tipo] || "#FF5A3C";
+      const color = COLOR_ALERTA_POR_TIPO[a.tipo] || "#FF5A3C";
       const marker = L.circleMarker([a.latitud, a.longitud], { radius: 8, color, fillColor: color, fillOpacity: 0.65, weight: 2 })
         .addTo(mapa)
         .bindPopup(`<strong style="text-transform:capitalize">${a.tipo}</strong><br>${a.descripcion || ""}<br><span style="color:#8493A6;font-size:11px">${a.direccion_referencial || "Sin referencia"}</span>`);
@@ -368,17 +425,62 @@ function renderizarColaDespacho(alertas) {
   });
 }
 
-function mostrarDetalleDespacho(idAlerta) {
+async function mostrarDetalleDespacho(idAlerta) {
   const alerta = alertasPendientesGlobal.find(a => a.id_alerta === idAlerta);
   if (!alerta) return;
   const panel = document.getElementById("panelDetalleDespacho");
   panel.classList.remove("empty");
+  panel.innerHTML = `<p style="color:var(--text-faint);">Calculando prioridad de despacho y sedes más cercanas…</p>`;
 
-  const opcionesRecursos = recursosDisponibles.map(r => `<option value="${r.id_recurso}">${r.tipo} — ${r.placa}</option>`).join("");
-  const opcionesSedes = cacheSedes.map(s => {
-    const inst = cacheInstituciones.find(i => i.id_institucion === s.id_institucion);
-    return `<option value="${s.id_sede}">${inst ? inst.nombre : "Sede"} (${s.camas_disponibles} camas libres)</option>`;
-  }).join("");
+  // -----------------------------------------------------------
+  // PUNTO 1: Prioridad en Despacho + Derivación por Cercanía
+  // -----------------------------------------------------------
+  // Ambas listas ya llegan ORDENADAS desde el backend:
+  //  - recursos: por prioridad según el tipo de emergencia
+  //  - sedes: por rama institucional afín + distancia Haversine (KM)
+  let recursosOrdenados = [];
+  let sedesOrdenadas = [];
+  try {
+    [recursosOrdenados, sedesOrdenadas] = await Promise.all([
+      api(`/recursos/despacho/${alerta.tipo}`),
+      api(`/sedes/derivacion?tipo=${alerta.tipo}&lat=${alerta.latitud}&lng=${alerta.longitud}`)
+    ]);
+  } catch (err) {
+    console.warn("No se pudo calcular prioridad/derivación:", err.message);
+  }
+
+  const opcionesRecursos = recursosOrdenados.map((r, i) =>
+    `<option value="${r.id_recurso}">#${i + 1} — ${r.tipo} — ${r.placa}</option>`
+  ).join("");
+
+  const listaPrioridadRecursos = recursosOrdenados.length === 0
+    ? `<p style="color:var(--text-faint);font-size:12px;">No hay recursos disponibles en este momento.</p>`
+    : `<div class="despacho-lista-prioridad">${recursosOrdenados.map((r, i) => `
+        <div class="despacho-opcion">
+          <span><span class="despacho-opcion-rango">#${i + 1}</span> ${r.tipo} — ${r.placa}</span>
+          <span class="estado-tag estado-${r.estado}">${r.estado}</span>
+        </div>`).join("")}</div>`;
+
+  const sedesConDatos = sedesOrdenadas.map(s => normalizarClaves(s));
+  const opcionesSedes = sedesConDatos.map(s =>
+    `<option value="${s.id_sede}">${s.nombre_institucion} — ${s.direccion} (${s.distancia_km != null ? s.distancia_km.toFixed(2) + " km" : "sin coordenadas"})</option>`
+  ).join("");
+
+  const listaSedes = sedesConDatos.length === 0
+    ? `<p style="color:var(--text-faint);font-size:12px;">No hay sedes registradas.</p>`
+    : `<div class="despacho-lista-prioridad">${sedesConDatos.map((s, i) => {
+        const capacidad = s.capacidad && s.capacidad.etiqueta
+          ? `<span class="despacho-opcion-capacidad">${s.capacidad.etiqueta}: ${s.capacidad.valor}</span>`
+          : "";
+        const distancia = s.distancia_km != null
+          ? `<span class="despacho-opcion-distancia">${s.distancia_km.toFixed(2)} km</span>`
+          : "";
+        return `
+        <div class="despacho-opcion">
+          <span><span class="despacho-opcion-rango">#${i + 1}</span> ${s.nombre_institucion} <span style="color:var(--text-faint);">(${s.tipo_institucion})</span></span>
+          <span style="display:flex;gap:10px;align-items:center;">${capacidad}${distancia}</span>
+        </div>`;
+      }).join("")}</div>`;
 
   panel.innerHTML = `
     <h3 style="margin-bottom:5px;text-transform:capitalize;color:var(--accent);font-size:20px;">Alerta: ${alerta.tipo}</h3>
@@ -389,12 +491,14 @@ function mostrarDetalleDespacho(idAlerta) {
     </div>
     <h4 style="margin-bottom:10px;border-bottom:1px solid var(--border-soft);padding-bottom:5px;">Asignación Logística</h4>
     <div style="display:flex;flex-direction:column;gap:15px;">
-      <label class="field"><span>1. Asignar Recurso (PostgreSQL)</span>
+      <label class="field"><span>1. Asignar Recurso (PostgreSQL) — orden de prioridad para "${alerta.tipo}"</span>
         <select id="despachoRecurso"><option value="">Seleccione recurso disponible...</option>${opcionesRecursos}</select>
       </label>
-      <label class="field"><span>2. Sede de Derivación (Oracle)</span>
+      ${listaPrioridadRecursos}
+      <label class="field"><span>2. Sede de Derivación (Oracle) — por cercanía (Haversine)</span>
         <select id="despachoSede"><option value="">Seleccione sede de destino...</option>${opcionesSedes}</select>
       </label>
+      ${listaSedes}
       <button class="btn-primary" style="margin-top:10px;padding:15px;font-size:16px;" onclick="ejecutarDespacho('${alerta.id_alerta}')">Despachar Unidades</button>
     </div>
   `;
@@ -640,9 +744,12 @@ async function cargarInstituciones() {
     const selSede = document.getElementById("sedeInstitucion");
     if (selSede) {
       const seleccionActual = selSede.value;
-      selSede.innerHTML = insts.map(i => `<option value="${i.id_institucion}">${i.nombre}</option>`).join("");
+      selSede.innerHTML = insts.map(i => `<option value="${i.id_institucion}" data-tipo="${i.tipo}">${i.nombre}</option>`).join("");
       if (seleccionActual) selSede.value = seleccionActual;
+      aplicarValidacionCapacidadSede();
     }
+
+    renderizarTablaRelacionInstitucional();
   } catch (err) { console.warn(err.message); }
 }
 
@@ -682,23 +789,114 @@ function abrirEditarInstitucion(id) {
 
 // ---------- SEDES Y CAPACIDAD (Oracle) — CRUD completo (admin) ----------
 
+// -----------------------------------------------------------
+// PUNTO 3: Validación de Formulario — según el tipo de institución
+// seleccionada, solo se habilita el campo de capacidad que le
+// corresponde: Hospital -> camas, Comisaría -> calabozos,
+// Bomberos -> ninguno (ambos deshabilitados / "ninguno").
+// -----------------------------------------------------------
+function aplicarValidacionCapacidadSede() {
+  const select = document.getElementById("sedeInstitucion");
+  const campoCamas = document.getElementById("sedeCamas");
+  const campoCalabozos = document.getElementById("sedeCalabozos");
+  if (!select || !campoCamas || !campoCalabozos) return;
+
+  const opcion = select.selectedOptions[0];
+  const tipo = opcion ? opcion.dataset.tipo : null;
+
+  campoCamas.disabled = tipo !== "Hospital";
+  campoCalabozos.disabled = tipo !== "Comisaria";
+  if (campoCamas.disabled) campoCamas.value = "";
+  if (campoCalabozos.disabled) campoCalabozos.value = "";
+
+  campoCamas.placeholder = tipo === "Hospital" ? "Camas" : "Ninguno";
+  campoCalabozos.placeholder = tipo === "Comisaria" ? "Calabozos" : "Ninguno";
+}
+document.getElementById("sedeInstitucion").addEventListener("change", aplicarValidacionCapacidadSede);
+
+// -----------------------------------------------------------
+// PUNTO 6: Modal de geolocalización para el registro de Sedes
+// -----------------------------------------------------------
+let mapaGeoPicker = null;
+let marcadorGeoPicker = null;
+let coordsGeoSeleccionadas = null;
+
+function abrirModalGeo() {
+  document.getElementById("modalGeo").classList.remove("hidden");
+  document.getElementById("btnConfirmarGeo").disabled = true;
+  document.getElementById("geoPickerLat").value = "";
+  document.getElementById("geoPickerLng").value = "";
+  coordsGeoSeleccionadas = null;
+
+  setTimeout(() => {
+    if (!mapaGeoPicker) {
+      mapaGeoPicker = L.map("mapaGeoPicker", { zoomControl: true }).setView([-9.5277, -77.5285], 13);
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+      }).addTo(mapaGeoPicker);
+      mapaGeoPicker.on("click", (e) => {
+        const { lat, lng } = e.latlng;
+        coordsGeoSeleccionadas = { lat, lng };
+        document.getElementById("geoPickerLat").value = lat.toFixed(6);
+        document.getElementById("geoPickerLng").value = lng.toFixed(6);
+        document.getElementById("btnConfirmarGeo").disabled = false;
+        if (marcadorGeoPicker) mapaGeoPicker.removeLayer(marcadorGeoPicker);
+        marcadorGeoPicker = L.circleMarker([lat, lng], {
+          radius: 9, color: "#FF5A3C", fillColor: "#FF5A3C", fillOpacity: 0.6, weight: 2
+        }).addTo(mapaGeoPicker);
+      });
+    }
+    mapaGeoPicker.invalidateSize();
+  }, 60);
+}
+
+function cerrarModalGeo() {
+  document.getElementById("modalGeo").classList.add("hidden");
+}
+
+document.getElementById("btnAbrirGeoSede").addEventListener("click", abrirModalGeo);
+
+document.getElementById("btnConfirmarGeo").addEventListener("click", () => {
+  if (!coordsGeoSeleccionadas) return;
+  document.getElementById("sedeLat").value = coordsGeoSeleccionadas.lat.toFixed(6);
+  document.getElementById("sedeLng").value = coordsGeoSeleccionadas.lng.toFixed(6);
+
+  const resumen = document.getElementById("sedeGeoResumen");
+  resumen.textContent = `📍 ${coordsGeoSeleccionadas.lat.toFixed(4)}, ${coordsGeoSeleccionadas.lng.toFixed(4)}`;
+  resumen.classList.remove("hidden");
+  document.getElementById("sedeGeoGuia").classList.add("hidden");
+
+  cerrarModalGeo();
+});
+
 document.getElementById("formSede").addEventListener("submit", async (e) => {
   e.preventDefault();
   const idInstitucion = document.getElementById("sedeInstitucion").value;
   if (!idInstitucion) return notificar("Primero registra una institución.", "warning");
+
+  const campoCamas = document.getElementById("sedeCamas");
+  const campoCalabozos = document.getElementById("sedeCalabozos");
+  const lat = document.getElementById("sedeLat").value;
+  const lng = document.getElementById("sedeLng").value;
+
   try {
     await api("/sedes", {
       method: "POST",
       body: JSON.stringify({
         id_institucion: parseInt(idInstitucion, 10),
         direccion: document.getElementById("sedeDireccion").value,
-        camas_disponibles: parseInt(document.getElementById("sedeCamas").value || "0", 10),
-        calabozos_disponibles: parseInt(document.getElementById("sedeCalabozos").value || "0", 10),
-        latitud: document.getElementById("sedeLat").value ? parseFloat(document.getElementById("sedeLat").value) : null,
-        longitud: document.getElementById("sedeLng").value ? parseFloat(document.getElementById("sedeLng").value) : null
+        camas_disponibles: campoCamas.disabled ? 0 : parseInt(campoCamas.value || "0", 10),
+        calabozos_disponibles: campoCalabozos.disabled ? 0 : parseInt(campoCalabozos.value || "0", 10),
+        latitud: lat ? parseFloat(lat) : null,
+        longitud: lng ? parseFloat(lng) : null
       })
     });
     document.getElementById("formSede").reset();
+    document.getElementById("sedeLat").value = "";
+    document.getElementById("sedeLng").value = "";
+    document.getElementById("sedeGeoResumen").classList.add("hidden");
+    document.getElementById("sedeGeoGuia").classList.remove("hidden");
+    aplicarValidacionCapacidadSede();
     cargarSedes();
     notificar("Sede creada y replicada.", "success");
   } catch (err) { manejarError(err, "No se pudo crear la sede: "); }
@@ -711,22 +909,53 @@ async function cargarSedes() {
     cacheSedes = sedes;
 
     const tbody = document.querySelector("#tablaSedes tbody");
-    if (!tbody) return;
-    tbody.innerHTML = "";
-    sedes.forEach(s => {
-      const tr = document.createElement("tr");
-      const acciones = esAdministrador() ? `
-          <div class="table-actions">
-            <button class="btn-icon btn-icon-edit" aria-label="Editar sede ${s.direccion}" onclick="abrirEditarSede(${s.id_sede})">✎</button>
-            <button class="btn-icon" aria-label="Eliminar sede ${s.direccion}" onclick="eliminarSede(${s.id_sede})">✕</button>
-          </div>` : "";
-      tr.innerHTML = `
-        <td>${s.id_sede}</td><td>${s.direccion}</td><td>${s.camas_disponibles}</td><td>${s.calabozos_disponibles}</td>
-        <td>${acciones}</td>
-      `;
-      tbody.appendChild(tr);
-    });
+    if (tbody) {
+      tbody.innerHTML = "";
+      sedes.forEach(s => {
+        const tr = document.createElement("tr");
+        const acciones = esAdministrador() ? `
+            <div class="table-actions">
+              <button class="btn-icon btn-icon-edit" aria-label="Editar sede ${s.direccion}" onclick="abrirEditarSede(${s.id_sede})">✎</button>
+              <button class="btn-icon" aria-label="Eliminar sede ${s.direccion}" onclick="eliminarSede(${s.id_sede})">✕</button>
+            </div>` : "";
+        tr.innerHTML = `
+          <td>${s.id_sede}</td><td>${s.direccion}</td><td>${s.camas_disponibles}</td><td>${s.calabozos_disponibles}</td>
+          <td>${acciones}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    renderizarMarcadoresSedes();
+    renderizarTablaRelacionInstitucional();
   } catch (err) { console.warn(err.message); }
+}
+
+// -----------------------------------------------------------
+// PUNTO 3: Tabla de relaciones (Institución <-> Sede <-> capacidad)
+// -----------------------------------------------------------
+function renderizarTablaRelacionInstitucional() {
+  const tbody = document.querySelector("#tablaRelacionInstitucional tbody");
+  if (!tbody) return;
+
+  if (cacheSedes.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-faint);">Aún no hay sedes registradas.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = cacheSedes.map((s, i) => {
+    const inst = cacheInstituciones.find(x => x.id_institucion === s.id_institucion);
+    const tipo = s.tipo_institucion || (inst ? inst.tipo : "—");
+    return `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${s.nombre_institucion || (inst ? inst.nombre : "—")}</td>
+        <td>${tipo}</td>
+        <td>${s.direccion}</td>
+        <td>${tipo === "Hospital" ? s.camas_disponibles : "—"}</td>
+        <td>${tipo === "Comisaria" ? s.calabozos_disponibles : "—"}</td>
+      </tr>`;
+  }).join("");
 }
 
 async function eliminarSede(id) {
@@ -1160,3 +1389,68 @@ async function cargarPanelSupervisor() {
     }
   } catch (err) { console.warn(err.message); }
 }
+
+// =========================================================
+// PUNTO 4: REACTIVIDAD — botones "Actualizar" + polling corto
+// =========================================================
+// Solución elegida para este stack (frontend estático sin build,
+// backend REST sin WebSockets/SSE): polling corto (cada 9s) de las
+// vistas con datos más volátiles (mapa de Alertas y Despacho),
+// combinado con un botón "Actualizar" estético en cada módulo para
+// forzar un refresco inmediato bajo demanda. Es la opción más simple
+// y confiable de implementar sobre Express + fetch, sin agregar
+// dependencias nuevas (Socket.io/SSE quedan como mejora futura,
+// documentada en el README).
+
+async function conSpinner(idBoton, fn) {
+  const btn = document.getElementById(idBoton);
+  if (btn) btn.classList.add("is-loading");
+  try {
+    await fn();
+  } finally {
+    if (btn) btn.classList.remove("is-loading");
+  }
+}
+
+function refrescarModuloDeVistaActiva() {
+  const vistaActiva = document.querySelector(".nav-item.active:not(.hidden)");
+  const view = vistaActiva ? vistaActiva.dataset.view : null;
+  if (view === "alertas" || view === "despacho") {
+    cargarAlertas();
+  }
+}
+
+function iniciarPolling() {
+  if (pollingHandle) return;
+  pollingHandle = setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    if (!TOKEN) return;
+    refrescarModuloDeVistaActiva();
+  }, POLLING_MS);
+}
+
+function detenerPolling() {
+  if (pollingHandle) {
+    clearInterval(pollingHandle);
+    pollingHandle = null;
+  }
+}
+
+const refrescoBotones = [
+  ["btnActualizarMapa", () => Promise.all([cargarAlertas(), cargarSedes()])],
+  ["btnActualizarDespacho", () => cargarAlertas()],
+  ["btnActualizarOperadores", () => cargarOperadores()],
+  ["btnActualizarRecursos", () => cargarRecursos()],
+  ["btnActualizarInstituciones", () => cargarInstituciones()],
+  ["btnActualizarSedes", () => cargarSedes()],
+  ["btnActualizarEvidencias", () => cargarEvidencias()],
+  ["btnActualizarHistorial", () => cargarHistorial()]
+];
+
+refrescoBotones.forEach(([id, fn]) => {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.addEventListener("click", () => conSpinner(id, fn));
+});
+
+document.getElementById("btnLogout").addEventListener("click", detenerPolling);

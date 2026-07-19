@@ -115,7 +115,7 @@ async function upsertRecursoEnOracle({ id_recurso, nombre, estado, activo }) {
         id_recurso,
         nombre,
         estado,
-        activo: activo === false ? 0 : 1
+        activo: activo !== false
       }
     );
   } finally {
@@ -206,7 +206,7 @@ async function upsertOperadorEnOracle({ id_operador, nombre, usuario, rol, activ
         nombre,
         usuario,
         rol,
-        activo: activo === false ? 0 : 1
+        activo: activo !== false
       }
     );
   } finally {

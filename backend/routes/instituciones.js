@@ -3,6 +3,7 @@ const { getOracleConnection } = require("../config/oracle");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { eliminarInstitucionEnCascada } = require("../services/cascadeService");
 const { sincronizarInstitucion, sincronizarSede } = require("../services/syncService");
+const { ordenarSedesPorRamaYCercania, capacidadVisible } = require("../services/geoService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -11,7 +12,7 @@ router.get("/instituciones", async (req, res) => {
   const conn = await getOracleConnection();
   try {
     const result = await conn.execute(
-      `SELECT * FROM Instituciones WHERE activo = 1 ORDER BY id_institucion`
+      `SELECT * FROM Instituciones WHERE activo = TRUE ORDER BY id_institucion`
     );
     res.json(result.rows);
   } finally {
@@ -52,7 +53,7 @@ router.put("/instituciones/:id", requireRole("administrador"), async (req, res) 
   const conn = await getOracleConnection();
   try {
     const result = await conn.execute(
-      `UPDATE Instituciones SET nombre = :nombre, tipo = :tipo WHERE id_institucion = :id AND activo = 1`,
+      `UPDATE Instituciones SET nombre = :nombre, tipo = :tipo WHERE id_institucion = :id AND activo = TRUE`,
       { nombre, tipo, id: idInstitucion },
       { autoCommit: true }
     );
@@ -80,9 +81,67 @@ router.get("/sedes", async (req, res) => {
   const conn = await getOracleConnection();
   try {
     const result = await conn.execute(
-      `SELECT * FROM Sedes_Capacidad WHERE activo = 1 ORDER BY id_sede`
+      `SELECT s.*, i.nombre AS nombre_institucion, i.tipo AS tipo_institucion
+       FROM Sedes_Capacidad s
+       JOIN Instituciones i ON i.id_institucion = s.id_institucion
+       WHERE s.activo = TRUE
+       ORDER BY s.id_sede`
     );
     res.json(result.rows);
+  } finally {
+    await conn.close();
+  }
+});
+
+// -----------------------------------------------------------
+// PUNTO 1: Derivación por Cercanía (Haversine) y Capacidad
+// -----------------------------------------------------------
+// Dado el tipo de emergencia y las coordenadas de la alerta, devuelve
+// TODAS las sedes activas con su distancia en KM (Haversine, calculada
+// en memoria — nunca se guarda en la BD) y ordenadas: primero la rama
+// institucional afín al tipo de emergencia (más cercanas primero),
+// luego el resto de sedes también por cercanía.
+//   medica     -> Instituciones Médicas (Hospital) primero
+//   incendio   -> Compañías de Bomberos primero
+//   seguridad  -> Comisarías primero
+//   accidente  -> Hospitales primero
+router.get("/sedes/derivacion", async (req, res) => {
+  const { tipo, lat, lng } = req.query;
+  const latOrigen = parseFloat(lat);
+  const lngOrigen = parseFloat(lng);
+
+  if (Number.isNaN(latOrigen) || Number.isNaN(lngOrigen)) {
+    return res.status(400).json({ error: "lat y lng son requeridos y deben ser numéricos" });
+  }
+
+  const conn = await getOracleConnection();
+  try {
+    const result = await conn.execute(
+      `SELECT s.*, i.nombre AS nombre_institucion, i.tipo AS tipo_institucion
+       FROM Sedes_Capacidad s
+       JOIN Instituciones i ON i.id_institucion = s.id_institucion
+       WHERE s.activo = TRUE`
+    );
+
+    // Oracle devuelve columnas en MAYÚSCULAS; normalizamos a minúsculas
+    // para que geoService.js (agnóstico de motor) trabaje siempre igual.
+    const sedes = result.rows.map((row) => {
+      const out = {};
+      Object.keys(row).forEach((k) => { out[k.toLowerCase()] = row[k]; });
+      return out;
+    });
+
+    const ordenadas = ordenarSedesPorRamaYCercania(sedes, tipo, latOrigen, lngOrigen);
+
+    // PUNTO 1: capacidad visible según el tipo de la institución dueña
+    // de la sede (camas si es Hospital, calabozos si es Comisaría, nada
+    // si es Bomberos).
+    const conCapacidad = ordenadas.map((s) => ({
+      ...s,
+      capacidad: capacidadVisible(s.tipo_institucion, s)
+    }));
+
+    res.json(conCapacidad);
   } finally {
     await conn.close();
   }
@@ -136,7 +195,7 @@ router.put("/sedes/:id", requireRole("administrador"), async (req, res) => {
        SET id_institucion = :id_institucion, direccion = :direccion,
            camas_disponibles = :camas, calabozos_disponibles = :calabozos,
            latitud = :lat, longitud = :lng
-       WHERE id_sede = :id AND activo = 1`,
+       WHERE id_sede = :id AND activo = TRUE`,
       {
         id_institucion, direccion,
         camas: camas_disponibles || 0,
@@ -180,7 +239,7 @@ router.delete("/sedes/:id", requireRole("administrador"), async (req, res) => {
     }
 
     await conn.execute(
-      `UPDATE Sedes_Capacidad SET activo = 0 WHERE id_sede = :id`,
+      `UPDATE Sedes_Capacidad SET activo = FALSE WHERE id_sede = :id`,
       [idSede],
       { autoCommit: true }
     );

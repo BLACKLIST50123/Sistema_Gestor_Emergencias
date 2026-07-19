@@ -3,6 +3,7 @@ const pgPool = require("../config/postgres");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { eliminarOperadorEnCascada } = require("../services/cascadeService");
 const { sincronizarRecurso, sincronizarOperador } = require("../services/syncService");
+const { ordenarRecursosPorPrioridad } = require("../services/geoService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -91,6 +92,26 @@ router.get("/recursos", async (req, res) => {
     `SELECT * FROM Recursos WHERE activo = TRUE ORDER BY id_recurso`
   );
   res.json(result.rows);
+});
+
+// -----------------------------------------------------------
+// PUNTO 1: Prioridad en Despacho
+// -----------------------------------------------------------
+// Devuelve los recursos DISPONIBLES ordenados según la prioridad de
+// despacho que corresponde al tipo de emergencia:
+//   medica     -> 1° Ambulancias, 2° Bomberos, 3° Patrullas
+//   incendio   -> 1° Bomberos, 2° Patrullas, 3° Ambulancias
+//   seguridad  -> 1° Patrullas, 2° Ambulancias, 3° Bomberos
+//   accidente  -> 1° Ambulancias, 2° Patrullas, 3° Bomberos
+// El orden se calcula en el backend (geoService.js) para que el
+// frontend solo tenga que pintar la lista tal cual la recibe.
+router.get("/recursos/despacho/:tipoEmergencia", async (req, res) => {
+  const { tipoEmergencia } = req.params;
+  const result = await pgPool.query(
+    `SELECT * FROM Recursos WHERE activo = TRUE AND estado = 'disponible' ORDER BY id_recurso`
+  );
+  const ordenados = ordenarRecursosPorPrioridad(result.rows, tipoEmergencia);
+  res.json(ordenados);
 });
 
 router.post("/recursos", requireRole("administrador"), async (req, res) => {

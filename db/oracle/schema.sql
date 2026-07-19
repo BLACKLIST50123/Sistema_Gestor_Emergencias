@@ -11,7 +11,7 @@ CREATE TABLE Instituciones (
     nombre           VARCHAR2(150) NOT NULL,
     tipo             VARCHAR2(30)  NOT NULL,
     CONSTRAINT chk_tipo_institucion CHECK (tipo IN ('Hospital','Comisaria','Bomberos')),
-    activo           NUMBER(1) DEFAULT 1 NOT NULL,   -- soft delete (1=activo, 0=inactivo)
+    activo           BOOLEAN DEFAULT TRUE NOT NULL,   -- soft delete (booleano nativo, Oracle 23ai+)
     fecha_creacion   DATE DEFAULT SYSDATE NOT NULL
 );
 
@@ -26,7 +26,7 @@ CREATE TABLE Sedes_Capacidad (
     calabozos_disponibles NUMBER DEFAULT 0,
     latitud               NUMBER(9,6),   -- útil para el mapa: dónde derivar al paciente/detenido
     longitud              NUMBER(9,6),
-    activo                NUMBER(1) DEFAULT 1 NOT NULL,
+    activo                BOOLEAN DEFAULT TRUE NOT NULL,
     CONSTRAINT fk_sede_institucion FOREIGN KEY (id_institucion)
         REFERENCES Instituciones(id_institucion)
 );
@@ -47,7 +47,7 @@ CREATE TABLE repl_recursos (
     id_recurso            NUMBER        PRIMARY KEY,
     nombre                VARCHAR2(60)  NOT NULL,
     estado                VARCHAR2(20)  NOT NULL,
-    activo                NUMBER(1) DEFAULT 1 NOT NULL,   -- espeja soft delete de Postgres
+    activo                BOOLEAN DEFAULT TRUE NOT NULL,   -- espeja soft delete de Postgres
     fecha_sincronizacion  DATE DEFAULT SYSDATE NOT NULL
 );
 
@@ -71,7 +71,7 @@ CREATE TABLE repl_operadores (
     nombre                VARCHAR2(120) NOT NULL,
     usuario               VARCHAR2(60)  NOT NULL,
     rol                   VARCHAR2(30)  NOT NULL,
-    activo                NUMBER(1) DEFAULT 1 NOT NULL,   -- espeja soft delete de Postgres
+    activo                BOOLEAN DEFAULT TRUE NOT NULL,   -- espeja soft delete de Postgres
     fecha_sincronizacion  DATE DEFAULT SYSDATE NOT NULL
 );
 

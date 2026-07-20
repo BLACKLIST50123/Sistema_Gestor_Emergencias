@@ -1,11 +1,6 @@
 # =========================================================
 # Levanta las 4 bases de datos del SGE con un solo comando:
 #   docker compose up -d
-#
-# Nota sobre Oracle: la imagen oficial de Oracle XE es pesada
-# (>2GB) y tarda varios minutos en arrancar la primera vez.
-# Si tu máquina es limitada, puedes comentar el servicio "oracle"
-# y usar Oracle Cloud Free Tier o una instalación local en su lugar.
 # =========================================================
 
 services:
@@ -44,6 +39,9 @@ services:
     image: cassandra:4.1
     container_name: sge_cassandra
     restart: unless-stopped
+    environment:
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 100M
     ports:
       - "9042:9042"
     volumes:
@@ -53,7 +51,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
-
+  
   mongodb:
     image: mongo:7
     container_name: sge_mongodb

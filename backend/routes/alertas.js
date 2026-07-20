@@ -81,7 +81,7 @@ router.post("/alertas", requireRole("operador", "administrador"), async (req, re
 // la UI) para que ya no aparezca como disponible para otra alerta.
 router.put("/alertas/:id/asignar-recurso", requireRole("operador", "administrador"), async (req, res) => {
   const id_alerta = req.params.id;
-  const { id_recurso } = req.body;
+  const { id_recurso, id_sede_derivacion } = req.body;
 
   if (!id_recurso) {
     return res.status(400).json({ error: "id_recurso es requerido" });
@@ -100,10 +100,11 @@ router.put("/alertas/:id/asignar-recurso", requireRole("operador", "administrado
   // Replicidad: el cambio de estado también se propaga a repl_recursos
   const replicas = await sincronizarRecurso(recurso);
 
-  // 2) Vincular el recurso a la alerta y pasarla a 'en_atencion' (Cassandra)
+  // 2) Vincular el recurso (y, si se eligió, la sede de derivación sugerida
+  //    por cercanía) a la alerta, y pasarla a 'en_atencion' (Cassandra)
   await cassandraClient.execute(
-    `UPDATE Alertas SET id_recurso_asignado = ?, estado = ?, fecha_actualizacion = ? WHERE id_alerta = ?`,
-    [id_recurso, "en_atencion", new Date(), id_alerta],
+    `UPDATE Alertas SET id_recurso_asignado = ?, id_sede_derivacion = ?, estado = ?, fecha_actualizacion = ? WHERE id_alerta = ?`,
+    [id_recurso, id_sede_derivacion ? parseInt(id_sede_derivacion, 10) : null, "en_atencion", new Date(), id_alerta],
     { prepare: true }
   );
 

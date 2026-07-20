@@ -3,7 +3,7 @@
  * SERVICIO DE CASCADA MANUAL ENTRE LAS 4 BASES DE DATOS
  * =========================================================
  *
- * Este es el corazón de lo que pide tu profesor: como Postgres,
+ * Como Postgres,
  * Oracle, Cassandra y MongoDB son motores independientes, no existe
  * un FOREIGN KEY ... ON DELETE CASCADE nativo entre ellos.
  *
@@ -17,7 +17,7 @@
  * - Evita el problema de "eliminé en Postgres pero Mongo ya no
  *   sabe a quién pertenecía esa evidencia".
  *
- * Si tu profesor exige DELETE físico, cambia los UPDATE por
+ * Para el DELETE físico, cambia los UPDATE por
  * DELETE en cada bloque (están marcados con comentarios).
  */
 

@@ -65,10 +65,11 @@ db.createCollection("evidencias", {
           description: "Array de objetos, cada uno una foto/video",
           items: {
             bsonType: "object",
-            required: ["tipo", "url", "fecha_subida"],
+            required: ["tipo", "fecha_subida"],
             properties: {
               tipo: { enum: ["foto", "video", "audio"] },
               url: { bsonType: "string" },
+              ruta_archivo: { bsonType: "string" },
               nombre_archivo: { bsonType: "string" },
               tamano_kb: { bsonType: ["int", "double"] },
               fecha_subida: { bsonType: "date" }

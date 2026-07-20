@@ -454,21 +454,18 @@ async function mostrarDetalleDespacho(idAlerta) {
   ).join("");
 
   const listaPrioridadRecursos = recursosOrdenados.length === 0
-    ? `<p style="color:var(--text-faint);font-size:12px;">No hay recursos disponibles en este momento.</p>`
-    : `<div class="despacho-lista-prioridad">${recursosOrdenados.map((r, i) => `
-        <div class="despacho-opcion">
+    ? `<p class="despacho-vacio">No hay recursos disponibles en este momento.</p>`
+    : `<div class="despacho-lista-prioridad" id="listaRecursosDespacho">${recursosOrdenados.map((r, i) => `
+        <button type="button" class="despacho-opcion" data-id="${r.id_recurso}" onclick="seleccionarDespacho('recurso','${r.id_recurso}',this)">
           <span><span class="despacho-opcion-rango">#${i + 1}</span> ${r.tipo} — ${r.placa}</span>
           <span class="estado-tag estado-${r.estado}">${r.estado}</span>
-        </div>`).join("")}</div>`;
+        </button>`).join("")}</div>`;
 
   const sedesConDatos = sedesOrdenadas.map(s => normalizarClaves(s));
-  const opcionesSedes = sedesConDatos.map(s =>
-    `<option value="${s.id_sede}">${s.nombre_institucion} — ${s.direccion} (${s.distancia_km != null ? s.distancia_km.toFixed(2) + " km" : "sin coordenadas"})</option>`
-  ).join("");
 
   const listaSedes = sedesConDatos.length === 0
-    ? `<p style="color:var(--text-faint);font-size:12px;">No hay sedes registradas.</p>`
-    : `<div class="despacho-lista-prioridad">${sedesConDatos.map((s, i) => {
+    ? `<p class="despacho-vacio">No hay sedes registradas.</p>`
+    : `<div class="despacho-lista-prioridad" id="listaSedesDespacho">${sedesConDatos.map((s, i) => {
         const capacidad = s.capacidad && s.capacidad.etiqueta
           ? `<span class="despacho-opcion-capacidad">${s.capacidad.etiqueta}: ${s.capacidad.valor}</span>`
           : "";
@@ -476,39 +473,54 @@ async function mostrarDetalleDespacho(idAlerta) {
           ? `<span class="despacho-opcion-distancia">${s.distancia_km.toFixed(2)} km</span>`
           : "";
         return `
-        <div class="despacho-opcion">
-          <span><span class="despacho-opcion-rango">#${i + 1}</span> ${s.nombre_institucion} <span style="color:var(--text-faint);">(${s.tipo_institucion})</span></span>
-          <span style="display:flex;gap:10px;align-items:center;">${capacidad}${distancia}</span>
-        </div>`;
+        <button type="button" class="despacho-opcion" data-id="${s.id_sede}" onclick="seleccionarDespacho('sede','${s.id_sede}',this)">
+          <span class="despacho-opcion-nombre"><span class="despacho-opcion-rango">#${i + 1}</span> ${s.nombre_institucion} <span class="despacho-opcion-tipo">(${s.tipo_institucion})</span></span>
+          <span class="despacho-opcion-meta">${capacidad}${distancia}</span>
+        </button>`;
       }).join("")}</div>`;
 
   panel.innerHTML = `
-    <h3 style="margin-bottom:5px;text-transform:capitalize;color:var(--accent);font-size:20px;">Alerta: ${alerta.tipo}</h3>
-    <p style="color:var(--text-dim);margin-bottom:20px;">ID: ${alerta.id_alerta}</p>
-    <div style="background:var(--bg);padding:15px;border-radius:8px;border:1px solid var(--border);margin-bottom:20px;">
+    <h3 class="despacho-titulo">Alerta: ${alerta.tipo}</h3>
+    <p class="despacho-id">ID: ${alerta.id_alerta}</p>
+    <div class="despacho-resumen">
       <p><strong>Descripción:</strong> ${alerta.descripcion}</p>
-      <p style="margin-top:10px;"><strong>Ubicación:</strong> ${alerta.direccion_referencial || "Sin referencia"}</p>
+      <p style="margin-top:8px;"><strong>Ubicación:</strong> ${alerta.direccion_referencial || "Sin referencia"}</p>
     </div>
-    <h4 style="margin-bottom:10px;border-bottom:1px solid var(--border-soft);padding-bottom:5px;">Asignación Logística</h4>
+    <h4 class="despacho-seccion-titulo">Asignación Logística</h4>
     <div style="display:flex;flex-direction:column;gap:15px;">
-      <label class="field"><span>1. Asignar Recurso (PostgreSQL) — orden de prioridad para "${alerta.tipo}"</span>
-        <select id="despachoRecurso"><option value="">Seleccione recurso disponible...</option>${opcionesRecursos}</select>
-      </label>
-      ${listaPrioridadRecursos}
-      <label class="field"><span>2. Sede de Derivación (Oracle) — por cercanía (Haversine)</span>
-        <select id="despachoSede"><option value="">Seleccione sede de destino...</option>${opcionesSedes}</select>
-      </label>
-      ${listaSedes}
-      <button class="btn-primary" style="margin-top:10px;padding:15px;font-size:16px;" onclick="ejecutarDespacho('${alerta.id_alerta}')">Despachar Unidades</button>
+      <div class="field">
+        <span class="despacho-campo-titulo">1. Asignar Recurso (PostgreSQL) — orden de prioridad para "${alerta.tipo}"</span>
+        <input type="hidden" id="despachoRecurso">
+        ${listaPrioridadRecursos}
+      </div>
+      <div class="field">
+        <span class="despacho-campo-titulo">2. Sede de Derivación (Oracle) — por cercanía (Haversine)</span>
+        <input type="hidden" id="despachoSede">
+        ${listaSedes}
+      </div>
+      <button class="btn-primary despacho-btn-confirmar" onclick="ejecutarDespacho('${alerta.id_alerta}')">Despachar Unidades</button>
     </div>
   `;
 }
 
+// Marca como seleccionada una tarjeta de recurso o sede dentro del panel
+// de Despacho, y guarda su id en el input oculto correspondiente.
+function seleccionarDespacho(tipo, id, btnEl) {
+  const contenedorId = tipo === "recurso" ? "listaRecursosDespacho" : "listaSedesDespacho";
+  document.querySelectorAll(`#${contenedorId} .despacho-opcion`).forEach(b => b.classList.remove("is-selected"));
+  btnEl.classList.add("is-selected");
+  document.getElementById(tipo === "recurso" ? "despachoRecurso" : "despachoSede").value = id;
+}
+
 async function ejecutarDespacho(idAlerta) {
   const idRecurso = document.getElementById("despachoRecurso").value;
+  const idSede = document.getElementById("despachoSede").value;
   if (!idRecurso) return notificar("Selecciona un recurso antes de despachar.", "warning");
   try {
-    await api(`/alertas/${idAlerta}/asignar-recurso`, { method: "PUT", body: JSON.stringify({ id_recurso: idRecurso }) });
+    await api(`/alertas/${idAlerta}/asignar-recurso`, {
+      method: "PUT",
+      body: JSON.stringify({ id_recurso: idRecurso, id_sede_derivacion: idSede || null })
+    });
     document.getElementById("panelDetalleDespacho").innerHTML = `<p>Unidad despachada. Selecciona otra emergencia.</p>`;
     cargarAlertas();
     await cargarRecursos();

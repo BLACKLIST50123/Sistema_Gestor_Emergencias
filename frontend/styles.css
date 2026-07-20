@@ -418,13 +418,15 @@ button, input, select, textarea {
 .alerta-estado {
   font-family: var(--font-mono);
   font-size: 10px;
-  padding: 2px 7px;
+  font-weight: 700;
+  padding: 2px 8px;
   border-radius: 100px;
   text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
-.estado-pendiente { background: var(--accent-dim); color: var(--accent); }
-.estado-en_atencion { background: #4C8DFF22; color: var(--pg); }
-.estado-cerrada { background: #2ECC7122; color: var(--mon); }
+.estado-pendiente { background: var(--accent-dim); color: var(--accent); border: 1px solid #FF5A3C55; }
+.estado-en_atencion { background: #4C8DFF33; color: #7FADFF; border: 1px solid #4C8DFF55; }
+.estado-cerrada { background: #2ECC7133; color: #4AE58B; border: 1px solid #2ECC7155; }
 
 .alerta-desc { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
 .alerta-meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
@@ -462,13 +464,15 @@ button, input, select, textarea {
 .estado-tag {
   font-family: var(--font-mono);
   font-size: 10px;
-  padding: 3px 8px;
+  font-weight: 700;
+  padding: 3px 9px;
   border-radius: 100px;
   text-transform: capitalize;
+  letter-spacing: 0.02em;
 }
-.estado-disponible { background: #2ECC7122; color: var(--mon); }
-.estado-ocupado { background: #FF5A3C22; color: var(--accent); }
-.estado-mantenimiento { background: #FF8A3D22; color: var(--ora); }
+.estado-disponible { background: #03fc6a33; color: #4AE58B; border: 1px solid #2ECC7155; }
+.estado-ocupado { background: #FF5A3C33; color: #FF8266; border: 1px solid #FF5A3C55; }
+.estado-mantenimiento { background: #FF8A3D33; color: #FFA85C; border: 1px solid #FF8A3D55; }
 
 .btn-icon {
   background: transparent;
@@ -680,6 +684,8 @@ button, input, select, textarea {
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
 }
 .panel-detalle.empty {
   display: flex;
@@ -976,7 +982,34 @@ button, input, select, textarea {
 .modal-geo { max-width: 560px; width: 92vw; }
 
 /* ---- Prioridad de despacho / derivación por cercanía ---- */
-.despacho-lista-prioridad { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---- Panel de Despacho: jerarquía tipográfica ---- */
+.despacho-titulo { margin-bottom: 4px; text-transform: capitalize; color: var(--accent); font-size: 16px; font-weight: 700; }
+.despacho-id { color: var(--text-faint); font-size: 11px; font-family: var(--font-mono); margin-bottom: 16px; }
+.despacho-resumen {
+  background: var(--bg);
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 18px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.despacho-resumen strong { color: var(--text); }
+.despacho-seccion-titulo {
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.despacho-campo-titulo { font-size: 12px; font-weight: 600; color: var(--text); }
+.despacho-btn-confirmar { margin-top: 6px; padding: 11px; font-size: 13.5px; }
+.despacho-lista-prioridad { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.despacho-vacio { color: var(--text-faint); font-size: 12px; margin-top: 8px; }
 .despacho-opcion {
   display: flex;
   align-items: center;
@@ -986,12 +1019,29 @@ button, input, select, textarea {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   font-size: 12.5px;
+  width: 100%;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  flex-wrap: wrap;
 }
+.despacho-opcion:hover { border-color: var(--text-faint); }
+.despacho-opcion.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.despacho-opcion-nombre { flex: 1 1 auto; min-width: 0; }
+.despacho-opcion-tipo { color: var(--text-faint); }
+.despacho-opcion-meta { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
 .despacho-opcion-rango {
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--text-faint);
   min-width: 18px;
+  display: inline-block;
 }
 .despacho-opcion-distancia {
   font-family: var(--font-mono);

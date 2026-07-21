@@ -901,6 +901,8 @@ button, input, select, textarea {
 /* ---- Panel de edición (pequeño, reutilizable) ---- */
 .modal-editar { max-width: 420px; }
 .modal-editar .field span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-faint); }
+/* Variante ancha: se activa cuando el panel incluye un campo tipo "mapa" (p. ej. editar Sede) */
+.modal-editar.modal-editar-ancho { max-width: 560px; width: 92vw; }
 
 /* ---- Acciones dentro de celdas de tabla (editar / eliminar) ---- */
 .table-actions { display: flex; gap: 6px; justify-content: flex-end; }

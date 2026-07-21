@@ -149,6 +149,21 @@ router.get("/sedes/derivacion", async (req, res) => {
 
 router.post("/sedes", requireRole("administrador"), async (req, res) => {
   const { id_institucion, direccion, camas_disponibles, calabozos_disponibles, latitud, longitud } = req.body;
+
+  // PUNTO 1 (agregado): la ubicación (latitud/longitud) es obligatoria
+  // al crear una sede, no solo la dirección en texto. Se valida también
+  // aquí en el backend porque el frontend puede ser evadido.
+  if (!id_institucion || !direccion) {
+    return res.status(400).json({ error: "id_institucion y direccion son requeridos" });
+  }
+  if (
+    latitud === undefined || latitud === null || latitud === "" ||
+    longitud === undefined || longitud === null || longitud === "" ||
+    Number.isNaN(parseFloat(latitud)) || Number.isNaN(parseFloat(longitud))
+  ) {
+    return res.status(400).json({ error: "Debes seleccionar la ubicación (latitud y longitud) de la sede en el mapa" });
+  }
+
   const conn = await getOracleConnection();
   try {
     const result = await conn.execute(

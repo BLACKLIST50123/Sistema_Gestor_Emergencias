@@ -97,3 +97,101 @@ db.createCollection("evidencias", {
 db.evidencias.createIndex({ id_alerta: 1 });
 db.evidencias.createIndex({ id_operador: 1 });
 db.evidencias.createIndex({ activo: 1 });
+
+// =========================================================
+// REPLICIDAD (agregado): tablas espejo repl_* en MongoDB
+// =========================================================
+// Hasta ahora MongoDB solo tenía "evidencias" (con subdocumentos
+// repl_operador/repl_alerta congelados por evidencia). Se agregan
+// aquí las mismas 4 colecciones espejo que ya existen en
+// Postgres/Oracle/Cassandra, para que Mongo también pueda mostrar
+// nombres de Instituciones/Recursos/Operadores/Sedes sin tener que
+// consultar los otros 3 motores cada vez. Las escribe únicamente
+// syncService.js (backend/services/syncService.js) vía upsert; el
+// resto del sistema solo las lee.
+//
+// Igual que en los demás motores: el id NUNCA lo genera Mongo,
+// siempre lo define la BD dueña real del dato (Oracle para
+// instituciones/sedes, PostgreSQL para operadores/recursos).
+
+db.createCollection("repl_instituciones", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["id_institucion", "nombre", "activo"],
+      properties: {
+        id_institucion: { bsonType: "int", description: "Id definido por Oracle (dueño real)" },
+        nombre: { bsonType: "string" },
+        activo: { bsonType: "bool" },
+        fecha_sincronizacion: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "error"
+});
+db.repl_instituciones.createIndex({ id_institucion: 1 }, { unique: true });
+db.repl_instituciones.createIndex({ activo: 1 });
+
+db.createCollection("repl_recursos", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["id_recurso", "nombre", "estado", "activo"],
+      properties: {
+        id_recurso: { bsonType: "int", description: "Id definido por PostgreSQL (dueño real)" },
+        nombre: { bsonType: "string", description: "tipo + placa concatenados (Postgres no tiene columna 'nombre')" },
+        estado: { bsonType: "string" },
+        activo: { bsonType: "bool" },
+        fecha_sincronizacion: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "error"
+});
+db.repl_recursos.createIndex({ id_recurso: 1 }, { unique: true });
+db.repl_recursos.createIndex({ activo: 1 });
+
+db.createCollection("repl_operadores", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["id_operador", "nombre", "usuario", "rol", "activo"],
+      properties: {
+        id_operador: { bsonType: "int", description: "Id definido por PostgreSQL (dueño real)" },
+        nombre: { bsonType: "string" },
+        usuario: { bsonType: "string" },
+        rol: { bsonType: "string", description: "'operador' o 'administrador'; nunca se replica la contraseña" },
+        activo: { bsonType: "bool" },
+        fecha_sincronizacion: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "error"
+});
+db.repl_operadores.createIndex({ id_operador: 1 }, { unique: true });
+db.repl_operadores.createIndex({ activo: 1 });
+
+db.createCollection("repl_sedes", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["id_sede", "id_institucion", "direccion", "activo"],
+      properties: {
+        id_sede: { bsonType: "int", description: "Id definido por Oracle (dueño real)" },
+        id_institucion: { bsonType: "int" },
+        direccion: { bsonType: "string" },
+        camas_disponibles: { bsonType: ["int", "double"] },
+        calabozos_disponibles: { bsonType: ["int", "double"] },
+        activo: { bsonType: "bool" },
+        fecha_sincronizacion: { bsonType: "date" }
+      }
+    }
+  },
+  validationLevel: "moderate",
+  validationAction: "error"
+});
+db.repl_sedes.createIndex({ id_sede: 1 }, { unique: true });
+db.repl_sedes.createIndex({ activo: 1 });

@@ -1,6 +1,13 @@
 -- =========================================================
 -- SEED DATA - Oracle (Gestión Institucional)
 -- =========================================================
+-- IDs usados como referencia cruzada consistente en TODOS los
+-- seeds del proyecto (Postgres/Oracle/Cassandra/Mongo), como si el
+-- administrador hubiera dado de alta cada registro uno por uno
+-- desde la página web:
+--   Instituciones: 1=Hospital Regional, 2=Comisaría, 3=Bomberos, 4=Clínica
+--   Sedes_Capacidad: 1..4 (una por institución, mismo orden)
+--   Operadores (Postgres): 1..5 | Recursos (Postgres): 1..6
 
 INSERT INTO Instituciones (nombre, tipo) VALUES ('Hospital Regional Ancash', 'Hospital');
 INSERT INTO Instituciones (nombre, tipo) VALUES ('Comisaría Central Huaraz', 'Comisaria');
@@ -19,6 +26,26 @@ VALUES (3, 'Av. Confraternidad Internacional 789, Huaraz', 0, 0, -9.525100, -77.
 
 INSERT INTO Sedes_Capacidad (id_institucion, direccion, camas_disponibles, calabozos_disponibles, latitud, longitud)
 VALUES (4, 'Jr. José Olaya 321, Huaraz', 6, 0, -9.530900, -77.526700);
+
+-- -------------------------------------------------------------
+-- REPLICIDAD: repl_recursos y repl_operadores (dueño real:
+-- PostgreSQL). Se insertan aquí con los MISMOS ids/valores que sus
+-- filas maestras en db/postgres/seed.sql, tal como quedarían si
+-- syncService.js hubiera hecho el espejo automáticamente al crear
+-- cada Operador/Recurso desde la página web.
+-- -------------------------------------------------------------
+INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo) VALUES (1, 'María Fernández Soto', 'mfernandez', 'administrador', TRUE);
+INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo) VALUES (2, 'Carlos Ramírez Quiroz', 'cramirez', 'operador', TRUE);
+INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo) VALUES (3, 'Ana Lucía Torres', 'atorres', 'operador', TRUE);
+INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo) VALUES (4, 'Jorge Luis Medina', 'jmedina', 'operador', TRUE);
+INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo) VALUES (5, 'Patricia Rojas Vega', 'projas', 'operador', TRUE);
+
+INSERT INTO repl_recursos (id_recurso, nombre, estado, activo) VALUES (1, 'ambulancia - AMB-101', 'disponible', TRUE);
+INSERT INTO repl_recursos (id_recurso, nombre, estado, activo) VALUES (2, 'ambulancia - AMB-102', 'ocupado', TRUE);
+INSERT INTO repl_recursos (id_recurso, nombre, estado, activo) VALUES (3, 'patrulla - PNP-234', 'disponible', TRUE);
+INSERT INTO repl_recursos (id_recurso, nombre, estado, activo) VALUES (4, 'patrulla - PNP-567', 'ocupado', TRUE);
+INSERT INTO repl_recursos (id_recurso, nombre, estado, activo) VALUES (5, 'bomberos - BOM-045', 'disponible', TRUE);
+INSERT INTO repl_recursos (id_recurso, nombre, estado, activo) VALUES (6, 'ambulancia - AMB-103', 'mantenimiento', TRUE);
 
 COMMIT;
 

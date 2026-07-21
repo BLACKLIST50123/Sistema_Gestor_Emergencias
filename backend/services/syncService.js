@@ -25,10 +25,30 @@
  *    "espeja": por eso no existen funciones separadas de
  *    eliminarInstitucionReplica/eliminarRecursoReplica, se reusa
  *    la misma función de upsert pasando activo=false.
+ * 5. MongoDB (dueño real de Evidencias) también recibe su propia
+ *    copia de cada tabla repl_* (repl_instituciones, repl_recursos,
+ *    repl_operadores, repl_sedes), igual que Postgres/Oracle/Cassandra.
+ *    Se guardan como colecciones normales (no requieren "schema"
+ *    previo) usando upsert por el id de la BD dueña como clave.
  */
 
 const pgPool = require("../config/postgres");
 const cassandraClient = require("../config/cassandra");
+const { getMongoDb } = require("../config/mongodb");
+
+// -----------------------------------------------------------------
+// Helper genérico de upsert en Mongo para las 4 colecciones repl_*.
+// Usa el campo id (idField) como llave lógica, igual que el resto
+// de motores (Mongo no "origina" ningún id, solo espeja).
+// -----------------------------------------------------------------
+async function upsertReplEnMongo(coleccion, idField, datos) {
+  const db = getMongoDb();
+  await db.collection(coleccion).updateOne(
+    { [idField]: datos[idField] },
+    { $set: { ...datos, fecha_sincronizacion: new Date() } },
+    { upsert: true }
+  );
+}
 
 // ---------------------------------------------------------------
 // INSTITUCIONES (dueño real: Oracle) -> repl_instituciones en
@@ -67,7 +87,7 @@ async function upsertInstitucionEnCassandra({ id_institucion, nombre, activo }) 
  * @returns {Promise<{postgres:boolean, cassandra:boolean, errores:string[]}>}
  */
 async function sincronizarInstitucion(institucion) {
-  const resultado = { postgres: false, cassandra: false, errores: [] };
+  const resultado = { postgres: false, cassandra: false, mongodb: false, errores: [] };
 
   try {
     await upsertInstitucionEnPostgres(institucion);
@@ -81,6 +101,17 @@ async function sincronizarInstitucion(institucion) {
     resultado.cassandra = true;
   } catch (err) {
     resultado.errores.push(`Cassandra (repl_instituciones): ${err.message}`);
+  }
+
+  try {
+    await upsertReplEnMongo("repl_instituciones", "id_institucion", {
+      id_institucion: institucion.id_institucion,
+      nombre: institucion.nombre,
+      activo: institucion.activo !== undefined ? institucion.activo : true
+    });
+    resultado.mongodb = true;
+  } catch (err) {
+    resultado.errores.push(`MongoDB (repl_instituciones): ${err.message}`);
   }
 
   if (resultado.errores.length) {
@@ -151,7 +182,7 @@ async function sincronizarRecurso(recurso) {
     activo: recurso.activo
   };
 
-  const resultado = { oracle: false, cassandra: false, errores: [] };
+  const resultado = { oracle: false, cassandra: false, mongodb: false, errores: [] };
 
   try {
     await upsertRecursoEnOracle(payload);
@@ -165,6 +196,18 @@ async function sincronizarRecurso(recurso) {
     resultado.cassandra = true;
   } catch (err) {
     resultado.errores.push(`Cassandra (repl_recursos): ${err.message}`);
+  }
+
+  try {
+    await upsertReplEnMongo("repl_recursos", "id_recurso", {
+      id_recurso: payload.id_recurso,
+      nombre: payload.nombre,
+      estado: payload.estado,
+      activo: payload.activo !== undefined ? payload.activo : true
+    });
+    resultado.mongodb = true;
+  } catch (err) {
+    resultado.errores.push(`MongoDB (repl_recursos): ${err.message}`);
   }
 
   if (resultado.errores.length) {
@@ -239,7 +282,7 @@ async function sincronizarOperador(operador) {
     activo: operador.activo
   };
 
-  const resultado = { oracle: false, cassandra: false, errores: [] };
+  const resultado = { oracle: false, cassandra: false, mongodb: false, errores: [] };
 
   try {
     await upsertOperadorEnOracle(payload);
@@ -253,6 +296,19 @@ async function sincronizarOperador(operador) {
     resultado.cassandra = true;
   } catch (err) {
     resultado.errores.push(`Cassandra (repl_operadores): ${err.message}`);
+  }
+
+  try {
+    await upsertReplEnMongo("repl_operadores", "id_operador", {
+      id_operador: payload.id_operador,
+      nombre: payload.nombre,
+      usuario: payload.usuario,
+      rol: payload.rol,
+      activo: payload.activo !== undefined ? payload.activo : true
+    });
+    resultado.mongodb = true;
+  } catch (err) {
+    resultado.errores.push(`MongoDB (repl_operadores): ${err.message}`);
   }
 
   if (resultado.errores.length) {
@@ -299,7 +355,7 @@ async function upsertSedeEnCassandra({ id_sede, id_institucion, direccion, camas
  * @returns {Promise<{postgres:boolean, cassandra:boolean, errores:string[]}>}
  */
 async function sincronizarSede(sede) {
-  const resultado = { postgres: false, cassandra: false, errores: [] };
+  const resultado = { postgres: false, cassandra: false, mongodb: false, errores: [] };
 
   try {
     await upsertSedeEnPostgres(sede);
@@ -313,6 +369,20 @@ async function sincronizarSede(sede) {
     resultado.cassandra = true;
   } catch (err) {
     resultado.errores.push(`Cassandra (repl_sedes): ${err.message}`);
+  }
+
+  try {
+    await upsertReplEnMongo("repl_sedes", "id_sede", {
+      id_sede: sede.id_sede,
+      id_institucion: sede.id_institucion,
+      direccion: sede.direccion,
+      camas_disponibles: sede.camas_disponibles || 0,
+      calabozos_disponibles: sede.calabozos_disponibles || 0,
+      activo: sede.activo !== undefined ? sede.activo : true
+    });
+    resultado.mongodb = true;
+  } catch (err) {
+    resultado.errores.push(`MongoDB (repl_sedes): ${err.message}`);
   }
 
   if (resultado.errores.length) {

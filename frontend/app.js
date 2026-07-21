@@ -891,6 +891,13 @@ document.getElementById("formSede").addEventListener("submit", async (e) => {
   const lat = document.getElementById("sedeLat").value;
   const lng = document.getElementById("sedeLng").value;
 
+  // PUNTO 1 (agregado): la ubicación es obligatoria para poder
+  // registrar una sede. Si el operador no seleccionó un punto en el
+  // mapa (botón "Agregar"), se bloquea el envío del formulario.
+  if (!lat || !lng) {
+    return notificar('Debes seleccionar la ubicación de la sede en el mapa (botón "Agregar").', "warning");
+  }
+
   try {
     await api("/sedes", {
       method: "POST",
@@ -985,14 +992,19 @@ function abrirEditarSede(id) {
   if (!s) return;
   abrirModalEditar({
     titulo: `Editar sede #${id}`,
+    ancho: true, // el mapa necesita un modal más ancho que el panel de edición estándar
     campos: [
       { id: "editSedeInstitucion", label: "Institución", tipo: "select", valor: String(s.id_institucion), requerido: true,
         opciones: cacheInstituciones.map(i => ({ value: String(i.id_institucion), label: i.nombre })) },
       { id: "editSedeDireccion", label: "Dirección", tipo: "text", valor: s.direccion, requerido: true },
       { id: "editSedeCamas", label: "Camas disponibles", tipo: "number", valor: s.camas_disponibles, requerido: false },
       { id: "editSedeCalabozos", label: "Calabozos disponibles", tipo: "number", valor: s.calabozos_disponibles, requerido: false },
-      { id: "editSedeLat", label: "Latitud (opcional)", tipo: "text", valor: s.latitud ?? "", requerido: false },
-      { id: "editSedeLng", label: "Longitud (opcional)", tipo: "text", valor: s.longitud ?? "", requerido: false }
+      // PUNTO 1 (agregado): en vez de campos de texto sueltos, se
+      // muestra un mapa al final del formulario para reseleccionar
+      // la ubicación (latitud/longitud) de la sede al editarla.
+      { id: "editSedeMapa", label: "Ubicación de la sede", tipo: "mapa", requerido: false,
+        latId: "editSedeLat", lngId: "editSedeLng",
+        lat: s.latitud ?? null, lng: s.longitud ?? null }
     ],
     onGuardar: async () => {
       const id_institucion = parseInt(document.getElementById("editSedeInstitucion").value, 10);
@@ -1023,9 +1035,13 @@ function abrirEditarSede(id) {
 // sin aplicar ningún cambio.
 // =========================================================
 let onGuardarActual = null;
+let mapaEditarInstance = null;
+let marcadorEditarInstance = null;
 
-function abrirModalEditar({ titulo, campos, onGuardar }) {
+function abrirModalEditar({ titulo, campos, onGuardar, ancho = false }) {
   document.getElementById("modalEditarTitulo").textContent = titulo;
+  document.querySelector("#modalEditar .modal-editar").classList.toggle("modal-editar-ancho", ancho);
+
   const cont = document.getElementById("modalEditarCampos");
   cont.innerHTML = campos.map(c => {
     if (c.tipo === "select") {
@@ -1036,6 +1052,25 @@ function abrirModalEditar({ titulo, campos, onGuardar }) {
           </select>
         </label>`;
     }
+    // PUNTO 1 (agregado): campo tipo "mapa" — se usa al editar una
+    // Sede para reseleccionar su ubicación. Renderiza un contenedor
+    // de mapa Leaflet + inputs ocultos (latId/lngId) que van al
+    // payload que arma onGuardar().
+    if (c.tipo === "mapa") {
+      return `
+        <div class="field">
+          <span>${c.label}</span>
+          <div class="geo-picker-field" style="margin-bottom:6px;">
+            <span id="${c.id}-resumen" class="geo-picker-resumen ${c.lat && c.lng ? "" : "hidden"}">
+              📍 ${c.lat && c.lng ? `${Number(c.lat).toFixed(4)}, ${Number(c.lng).toFixed(4)}` : ""}
+            </span>
+            <span id="${c.id}-guia" class="geo-picker-guia ${c.lat && c.lng ? "hidden" : ""}">Haz clic en el mapa para seleccionar la nueva ubicación</span>
+          </div>
+          <div id="${c.id}" style="height: 260px; width: 100%; border-radius: 8px; border: 1px solid var(--border);"></div>
+          <input type="hidden" id="${c.latId}" value="${c.lat ?? ""}">
+          <input type="hidden" id="${c.lngId}" value="${c.lng ?? ""}">
+        </div>`;
+    }
     return `
       <label class="field"><span>${c.label}</span>
         <input type="${c.tipo}" id="${c.id}" value="${c.valor ?? ""}" ${c.requerido ? "required" : ""}>
@@ -1044,11 +1079,68 @@ function abrirModalEditar({ titulo, campos, onGuardar }) {
 
   onGuardarActual = onGuardar;
   document.getElementById("modalEditar").classList.remove("hidden");
+
+  // Inicializa cualquier campo tipo "mapa" que haya en este formulario.
+  const camposMapa = campos.filter(c => c.tipo === "mapa");
+  if (camposMapa.length) {
+    setTimeout(() => camposMapa.forEach(inicializarMapaEditar), 60);
+  }
+}
+
+// PUNTO 1 (agregado): inicializa (o reinicia) el mapa Leaflet dentro
+// del panel de edición genérico, para elegir una nueva latitud/
+// longitud. Como el modal se reutiliza para varias entidades, el
+// mapa se crea desde cero cada vez que se abre (se destruye el
+// anterior si existía) para evitar conflictos de instancia de Leaflet.
+function inicializarMapaEditar(campo) {
+  if (mapaEditarInstance) {
+    mapaEditarInstance.remove();
+    mapaEditarInstance = null;
+    marcadorEditarInstance = null;
+  }
+
+  const centro = (campo.lat && campo.lng) ? [Number(campo.lat), Number(campo.lng)] : [-9.5277, -77.5285];
+  mapaEditarInstance = L.map(campo.id, { zoomControl: true }).setView(centro, 14);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
+  }).addTo(mapaEditarInstance);
+
+  if (campo.lat && campo.lng) {
+    marcadorEditarInstance = L.circleMarker(centro, {
+      radius: 9, color: "#FF5A3C", fillColor: "#FF5A3C", fillOpacity: 0.6, weight: 2
+    }).addTo(mapaEditarInstance);
+  }
+
+  mapaEditarInstance.on("click", (e) => {
+    const { lat, lng } = e.latlng;
+    document.getElementById(campo.latId).value = lat.toFixed(6);
+    document.getElementById(campo.lngId).value = lng.toFixed(6);
+
+    const resumen = document.getElementById(`${campo.id}-resumen`);
+    const guia = document.getElementById(`${campo.id}-guia`);
+    if (resumen) {
+      resumen.textContent = `📍 ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      resumen.classList.remove("hidden");
+    }
+    if (guia) guia.classList.add("hidden");
+
+    if (marcadorEditarInstance) mapaEditarInstance.removeLayer(marcadorEditarInstance);
+    marcadorEditarInstance = L.circleMarker([lat, lng], {
+      radius: 9, color: "#FF5A3C", fillColor: "#FF5A3C", fillOpacity: 0.6, weight: 2
+    }).addTo(mapaEditarInstance);
+  });
+
+  setTimeout(() => mapaEditarInstance && mapaEditarInstance.invalidateSize(), 80);
 }
 
 function cerrarModalEditar() {
   document.getElementById("modalEditar").classList.add("hidden");
   onGuardarActual = null;
+  if (mapaEditarInstance) {
+    mapaEditarInstance.remove();
+    mapaEditarInstance = null;
+    marcadorEditarInstance = null;
+  }
 }
 
 document.getElementById("formEditar").addEventListener("submit", async (e) => {

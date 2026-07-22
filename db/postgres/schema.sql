@@ -1,10 +1,29 @@
 -- =========================================================
+-- QUÉ HACE ESTE ARCHIVO (en simple)
+-- =========================================================
+-- Este archivo crea las tablas de PostgreSQL, la base de datos
+-- dueña de los Operadores (los usuarios que usan el sistema) y de
+-- los Recursos (ambulancias, patrullas, bomberos). También trae
+-- las tablas espejo (repl_instituciones, repl_sedes) que guardan
+-- una copia de lo que vive en Oracle, y la tabla de Auditoría que
+-- registra quién hizo cada acción importante.
+
+-- =========================================================
 -- POSTGRESQL - Módulo: USUARIOS Y RECURSOS
 -- Sistema de Gestión de Emergencias (SGE)
 -- =========================================================
 
-CREATE DATABASE sge_usuarios_recursos;
--- \c sge_usuarios_recursos
+-- PUNTO (agregado / corregido): NO se debe crear la base de datos
+-- aquí. El contenedor de docker-compose.yml ya la crea solo, a
+-- través de la variable de entorno POSTGRES_DB=sge_usuarios_recursos.
+-- Este script se ejecuta DENTRO de esa base (docker-entrypoint-initdb.d
+-- conecta con --dbname sge_usuarios_recursos), así que un
+-- "CREATE DATABASE sge_usuarios_recursos" aquí truena con "ya existe"
+-- y corta el script antes de llegar a los CREATE TABLE de abajo
+-- (por eso antes nunca se autocreaban las tablas: había que
+-- pegarlas a mano). Si corres esto manualmente en pgAdmin/psql en
+-- vez de con docker, sí crea tú mismo la base antes, por fuera de
+-- este archivo, y luego conéctate a ella antes de correr el resto.
 
 -- -------------------------------------------------
 -- Tabla: Operadores

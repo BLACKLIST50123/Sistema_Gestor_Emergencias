@@ -1,4 +1,12 @@
 -- =========================================================
+-- QUÉ HACE ESTE ARCHIVO (en simple)
+-- =========================================================
+-- Llena Oracle con datos de ejemplo: 4 instituciones (hospital,
+-- comisaría, bomberos, clínica) con su sede cada una, más las
+-- copias de Operadores/Recursos que "nacieron" en PostgreSQL, para
+-- poder probar el sistema con datos reales desde el primer arranque.
+
+-- =========================================================
 -- SEED DATA - Oracle (Gestión Institucional)
 -- =========================================================
 -- IDs usados como referencia cruzada consistente en TODOS los
@@ -8,6 +16,15 @@
 --   Instituciones: 1=Hospital Regional, 2=Comisaría, 3=Bomberos, 4=Clínica
 --   Sedes_Capacidad: 1..4 (una por institución, mismo orden)
 --   Operadores (Postgres): 1..5 | Recursos (Postgres): 1..6
+
+-- PUNTO (agregado / corregido): cada archivo .sql de
+-- /container-entrypoint-initdb.d se ejecuta en SU PROPIA sesión de
+-- SQL*Plus (no hereda el ALTER SESSION del schema.sql anterior), así
+-- que hay que repetir aquí el cambio de PDB y de esquema, o los
+-- INSERT de abajo apuntarían a tablas Instituciones/Sedes_Capacidad
+-- que no existen bajo SYS/CDB$ROOT.
+ALTER SESSION SET CONTAINER = FREEPDB1;
+ALTER SESSION SET CURRENT_SCHEMA = sge_user;
 
 INSERT INTO Instituciones (nombre, tipo) VALUES ('Hospital Regional Ancash', 'Hospital');
 INSERT INTO Instituciones (nombre, tipo) VALUES ('Comisaría Central Huaraz', 'Comisaria');
@@ -19,7 +36,7 @@ INSERT INTO Sedes_Capacidad (id_institucion, direccion, camas_disponibles, calab
 VALUES (1, 'Av. Luzuriaga 123, Huaraz', 12, 0, -9.527500, -77.527800);
 
 INSERT INTO Sedes_Capacidad (id_institucion, direccion, camas_disponibles, calabozos_disponibles, latitud, longitud)
-VALUES (2, 'Jr. Simón Bolívar 456, Huaraz', 0, 8, -9.529800, -77.529500);
+VALUES (2, 'Jr. Simón Bolívar 456, Huaraz', 0, 10, -9.529800, -77.529500);
 
 INSERT INTO Sedes_Capacidad (id_institucion, direccion, camas_disponibles, calabozos_disponibles, latitud, longitud)
 VALUES (3, 'Av. Confraternidad Internacional 789, Huaraz', 0, 0, -9.525100, -77.531200);

@@ -1,4 +1,15 @@
 # =========================================================
+# QUÉ HACE ESTE ARCHIVO (en simple)
+# =========================================================
+# Este archivo prende las 4 bases de datos del proyecto (Postgres,
+# Oracle, Cassandra y MongoDB), cada una en su propio contenedor,
+# con un solo comando: "docker compose up -d". Postgres y Oracle se
+# llenan solas con su schema y seed la primera vez que arrancan 
+# Cassandra y MongoDB NO se auto-inicializan, por eso hay que correr después el
+# script init-db.sh (en sus casos los comandos cmd del archivo PRIMER ARRANQUE) 
+# para cargarles sus tablas y datos.
+#
+# =========================================================
 # Levanta las 4 bases de datos del SGE con un solo comando:
 #   docker compose up -d
 # =========================================================

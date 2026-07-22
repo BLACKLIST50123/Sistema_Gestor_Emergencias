@@ -1,4 +1,12 @@
 -- =========================================================
+-- QUÉ HACE ESTE ARCHIVO (en simple)
+-- =========================================================
+-- Llena Cassandra con 3 alertas de ejemplo (una médica, una de
+-- seguridad y un incendio) repetidas en sus 3 tablas de consulta, y
+-- con las copias de Instituciones/Operadores/Recursos/Sedes que
+-- "nacieron" en las otras bases de datos.
+
+-- =========================================================
 -- SEED DATA - Cassandra (Alertas en Tiempo Real)
 -- Coordenadas de ejemplo en Huaraz, Ancash, Perú
 -- =========================================================

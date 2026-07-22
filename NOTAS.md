@@ -1,3 +1,0 @@
-NOTAS:
-1. Agregar validacion en Sedes y Capacidad en el boton Agregar Sede para que sea obligatorio seleccionar la Ubicacion, y que al editar una sede para seleccionar la latitud y longitud tambien aparezca un mapa al final del formulario de edicion para que se seleccione la nueva ubicacion. 
-2. Agregar la insercion de datos base en lo que serian las tablas de replicidad tambien, para que tengan los registros que deberian de tener como si yo hubiera creado uno por uno mediante la pagina web, pero para tener una base de datos que se complete la insercion en todas las tablas rpl tambien.

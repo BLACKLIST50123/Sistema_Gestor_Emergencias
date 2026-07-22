@@ -1,3 +1,12 @@
+// =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Aquí se manejan las Evidencias: las fotos/videos/audios que un
+// operador sube cuando cierra un caso. El archivo en sí (la foto,
+// el video) se guarda en el disco del servidor (carpeta uploads/);
+// en MongoDB solo se guarda la RUTA de ese archivo y los datos
+// alrededor (descripción, quién la subió, a qué alerta pertenece).
+
 const express = require("express");
 const path = require("path");
 const multer = require("multer");
@@ -26,9 +35,49 @@ const storage = multer.diskStorage({
     cb(null, nombreUnico);
   }
 });
-const upload = multer({ storage });
+// PUNTO (agregado): antes multer aceptaba CUALQUIER archivo, de
+// cualquier tamaño. Ahora se limita a 25 MB por archivo y solo se
+// aceptan imágenes/videos/audios (lo mismo que ya sugería el
+// atributo "accept" del <input type="file">, pero validado en el
+// servidor, que es el que de verdad protege el sistema).
+const TIPOS_ARCHIVO_VALIDOS = /^(image|video|audio)\//;
+const upload = multer({
+  storage,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
+  fileFilter: (req, file, cb) => {
+    if (!TIPOS_ARCHIVO_VALIDOS.test(file.mimetype)) {
+      return cb(new Error("Solo se permiten archivos de imagen, video o audio"));
+    }
+    cb(null, true);
+  }
+});
 
-// GET evidencias de una alerta específica
+// PUNTO (agregado): traduce los errores de multer (archivo muy
+// pesado o tipo no permitido) a un JSON con status 400 legible por
+// el frontend, en vez de dejar que rompa la request sin respuesta.
+function manejarErrorMulter(middleware) {
+  return (req, res, next) => {
+    middleware(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({ error: "El archivo supera el límite de 25 MB" });
+        }
+        return res.status(400).json({ error: "No se pudo subir el archivo" });
+      }
+      if (err) {
+        return res.status(400).json({ error: err.message || "Archivo inválido" });
+      }
+      next();
+    });
+  };
+}
+
+// ==============================
+// GET /EVIDENCIAS/ALERTA/:IDALERTA (VER LAS EVIDENCIAS DE UN CASO)
+// ==============================
+// Trae todas las evidencias (fotos/videos/audios) que están activas
+// y que pertenecen a una alerta puntual, para mostrarlas en el
+// Historial 360° de ese caso.
 router.get("/evidencias/alerta/:idAlerta", async (req, res) => {
   const db = getMongoDb();
   const evidencias = await db.collection("evidencias")
@@ -37,10 +86,16 @@ router.get("/evidencias/alerta/:idAlerta", async (req, res) => {
   res.json(evidencias);
 });
 
-// POST nueva evidencia al cerrar un caso
+// ==============================
+// POST /EVIDENCIAS (CREAR UNA EVIDENCIA NUEVA AL CERRAR UN CASO)
+// ==============================
 // El frontend envía esto como multipart/form-data (FormData), con
-// el campo "archivo" siendo el <input type="file"> real.
-router.post("/evidencias", requireRole("operador", "administrador"), upload.single("archivo"), async (req, res) => {
+// el campo "archivo" siendo el <input type="file"> real. Antes de
+// guardar, "congela" una copia mínima del operador (de Postgres) y
+// de la ubicación de la alerta (de Cassandra) dentro del mismo
+// documento, para no tener que ir a consultarlas de nuevo cada vez
+// que se muestra esta evidencia.
+router.post("/evidencias", requireRole("operador", "administrador"), manejarErrorMulter(upload.single("archivo")), async (req, res) => {
   const { id_alerta, descripcion } = req.body;
   const id_operador = req.operador.id_operador; // viene del token (login PostgreSQL)
 
@@ -115,7 +170,14 @@ router.post("/evidencias", requireRole("operador", "administrador"), upload.sing
 });
 
 // POST agregar un archivo multimedia más a una evidencia existente
-router.post("/evidencias/:id/archivos", requireRole("operador", "administrador"), upload.single("archivo"), async (req, res) => {
+// ==============================
+// POST /EVIDENCIAS/:ID/ARCHIVOS (SUMAR OTRO ARCHIVO A UNA EVIDENCIA YA CREADA)
+// ==============================
+// Cuando el operador selecciona varios archivos a la vez, el
+// frontend crea la evidencia con el primero (POST /evidencias) y
+// después llama esta ruta una vez por cada archivo restante, para
+// ir agregándolos a la misma evidencia sin crear documentos duplicados.
+router.post("/evidencias/:id/archivos", requireRole("operador", "administrador"), manejarErrorMulter(upload.single("archivo")), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Debes adjuntar un archivo (campo 'archivo')" });
   }

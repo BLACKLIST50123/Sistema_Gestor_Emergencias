@@ -1,5 +1,16 @@
 /**
  * =========================================================
+ * QUÉ HACE ESTE ARCHIVO (en simple)
+ * =========================================================
+ * Cuando se da de baja un Operador, una Institución o se elimina una
+ * Alerta del historial, no basta con borrarlo en UNA base de datos:
+ * hay que avisarle a las otras 3 también (porque cada una guarda su
+ * propio pedacito de información relacionada). Este archivo es el
+ * que se encarga de hacer esa "baja en cadena" a mano, base por
+ * base, y de anotar en un resumen qué salió bien y qué falló en
+ * cada una.
+ *
+ * =========================================================
  * SERVICIO DE CASCADA MANUAL ENTRE LAS 4 BASES DE DATOS
  * =========================================================
  *
@@ -29,6 +40,15 @@ const { getMongoDb } = require("../config/mongodb");
  * Elimina (lógicamente) un Operador y todo lo que depende de él
  * en las 4 bases de datos.
  */
+// ==============================
+// ELIMINAR OPERADOR EN CASCADA (BAJA DE UN OPERADOR EN LAS 4 BD)
+// ==============================
+// Desactiva al operador en PostgreSQL (su dueño), libera los
+// recursos que tenía asignados, marca en Cassandra las alertas que
+// había reportado, desactiva sus evidencias en MongoDB, y además
+// propaga la baja a la tabla espejo repl_operadores. Cada paso va
+// en su propio try/catch para que, si uno falla, los demás igual
+// se intenten (no se detiene todo por un solo error).
 async function eliminarOperadorEnCascada(idOperador) {
   const { sincronizarOperador } = require("./syncService");
   const resultado = {
@@ -111,6 +131,13 @@ async function eliminarOperadorEnCascada(idOperador) {
  * Además marca en Cassandra las alertas que apuntaban a esa sede
  * para que el frontend sepa que ya no es una derivación válida.
  */
+// ==============================
+// ELIMINAR INSTITUCIÓN EN CASCADA (BAJA DE UNA INSTITUCIÓN Y SUS SEDES)
+// ==============================
+// Desactiva en Oracle (dueño) tanto la institución como todas sus
+// sedes, quita esa sede como destino de derivación en las alertas de
+// Cassandra que la tenían asignada, y propaga la baja a las tablas
+// espejo repl_instituciones y repl_sedes.
 async function eliminarInstitucionEnCascada(idInstitucion) {
   const { getOracleConnection } = require("../config/oracle");
   const { sincronizarInstitucion, sincronizarSede } = require("./syncService");
@@ -195,7 +222,7 @@ async function eliminarInstitucionEnCascada(idInstitucion) {
 }
 
 /**
- * Elimina una Alerta (emergencia) del Historial 360°.
+ * Elimina una Alerta (emergencia) del Historial Emergencias.
  *
  * Solo tiene sentido para casos ya CERRADOS (el frontend solo ofrece
  * este botón al Administrador dentro de la vista de Historial). Como
@@ -210,6 +237,13 @@ async function eliminarInstitucionEnCascada(idInstitucion) {
  *      esa alerta, para no dejar evidencia "huérfana" apuntando a un
  *      caso que ya no existe en el Historial.
  */
+// ==============================
+// ELIMINAR EMERGENCIAS EN CASCADA (BORRAR UNA EMERGENCIA DEL HISTORIAL)
+// ==============================
+// Borra de verdad (no soft delete) la alerta de las 3 tablas de
+// Cassandra donde vive duplicada, y desactiva las evidencias de esa
+// alerta en MongoDB para que no queden huérfanas. Solo lo puede
+// pedir un Administrador (ver backend/routes/alertas.js).
 async function eliminarAlertaEnCascada(idAlerta) {
   const resultado = { cassandra: null, mongodb: null, errores: [] };
 

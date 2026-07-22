@@ -1,5 +1,16 @@
 /**
  * =========================================================
+ * QUÉ HACE ESTE ARCHIVO (en simple)
+ * =========================================================
+ * Como el proyecto usa 4 bases de datos distintas y cada una es
+ * "dueña" de un tipo de dato (por ejemplo, Oracle es dueña de las
+ * Instituciones), este archivo se encarga de mandarle una COPIA de
+ * esos datos a las otras 3 bases cada vez que algo se crea, edita o
+ * se da de baja. Así, cualquier base puede mostrar "Hospital
+ * Regional" sin tener que ir a preguntarle a Oracle cada vez. Estas
+ * copias se llaman tablas repl_ (de "réplica").
+ *
+ * =========================================================
  * SERVICIO DE REPLICIDAD (TABLAS ESPEJO / DESNORMALIZACIÓN CONTROLADA)
  * =========================================================
  *
@@ -18,8 +29,7 @@
  *    del resto del sistema: solo este servicio escribe en ellas.
  * 3. Se sincroniza en el mismo request (síncrono, "best effort"):
  *    si una réplica falla, la operación en la BD dueña NO se revierte
- *    (evitamos un 2PC real, que está fuera del alcance de un
- *    proyecto académico); el error queda registrado en `errores`
+ *    el error queda registrado en `errores`
  *    y se puede reintentar manualmente o con un job aparte.
  * 4. activo=false representa un soft delete que también se
  *    "espeja": por eso no existen funciones separadas de
@@ -36,11 +46,12 @@ const pgPool = require("../config/postgres");
 const cassandraClient = require("../config/cassandra");
 const { getMongoDb } = require("../config/mongodb");
 
-// -----------------------------------------------------------------
-// Helper genérico de upsert en Mongo para las 4 colecciones repl_*.
-// Usa el campo id (idField) como llave lógica, igual que el resto
-// de motores (Mongo no "origina" ningún id, solo espeja).
-// -----------------------------------------------------------------
+// ==============================
+// UPSERT REPL EN MONGO (GUARDAR/ACTUALIZAR UNA COPIA EN MONGO)
+// ==============================
+// Función genérica que usan las 4 sincronizaciones de abajo para
+// guardar su copia en Mongo. Si el registro (buscado por su id) ya
+// existe lo actualiza, y si no existe lo crea — todo en un solo paso.
 async function upsertReplEnMongo(coleccion, idField, datos) {
   const db = getMongoDb();
   await db.collection(coleccion).updateOne(
@@ -55,6 +66,11 @@ async function upsertReplEnMongo(coleccion, idField, datos) {
 // PostgreSQL y Cassandra
 // ---------------------------------------------------------------
 
+// ==============================
+// UPSERT INSTITUCIÓN EN POSTGRES (COPIAR UNA INSTITUCIÓN A POSTGRES)
+// ==============================
+// Guarda o actualiza la copia de una Institución en la tabla
+// repl_instituciones de PostgreSQL.
 async function upsertInstitucionEnPostgres({ id_institucion, nombre, activo }) {
   await pgPool.query(
     `INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion)
@@ -67,10 +83,13 @@ async function upsertInstitucionEnPostgres({ id_institucion, nombre, activo }) {
   );
 }
 
+// ==============================
+// UPSERT INSTITUCIÓN EN CASSANDRA (COPIAR UNA INSTITUCIÓN A CASSANDRA)
+// ==============================
+// Igual que la de arriba, pero para Cassandra. En Cassandra un
+// INSERT con la misma partition key SOBREESCRIBE la fila anterior,
+// así que sirve como upsert sin necesidad de "ON CONFLICT" ni "MERGE".
 async function upsertInstitucionEnCassandra({ id_institucion, nombre, activo }) {
-  // En Cassandra un INSERT con la misma partition key SOBREESCRIBE
-  // la fila anterior, así que sirve como upsert sin necesidad de
-  // "ON CONFLICT" ni "MERGE".
   await cassandraClient.execute(
     `INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion)
      VALUES (?, ?, ?, ?)`,
@@ -86,6 +105,13 @@ async function upsertInstitucionEnCassandra({ id_institucion, nombre, activo }) 
  * @param {{id_institucion:number, nombre:string, activo?:boolean}} institucion
  * @returns {Promise<{postgres:boolean, cassandra:boolean, errores:string[]}>}
  */
+// ==============================
+// SINCRONIZAR INSTITUCIÓN (FUNCIÓN PRINCIPAL: PROPAGA UNA INSTITUCIÓN)
+// ==============================
+// Esta es la que llaman las rutas (instituciones.js, cascadeService.js)
+// cada vez que se crea, edita o desactiva una Institución. Manda la
+// copia a Postgres, Cassandra y Mongo, y devuelve un resumen de a
+// cuáles les llegó bien y a cuáles no.
 async function sincronizarInstitucion(institucion) {
   const resultado = { postgres: false, cassandra: false, mongodb: false, errores: [] };
 
@@ -126,6 +152,11 @@ async function sincronizarInstitucion(institucion) {
 // Oracle y Cassandra
 // ---------------------------------------------------------------
 
+// ==============================
+// UPSERT RECURSO EN ORACLE (COPIAR UN RECURSO A ORACLE)
+// ==============================
+// Usa un MERGE (el "upsert" de Oracle): si el recurso ya existe en
+// repl_recursos lo actualiza, si no, lo inserta.
 async function upsertRecursoEnOracle({ id_recurso, nombre, estado, activo }) {
   const oracledb = require("oracledb");
   const { getOracleConnection } = require("../config/oracle");
@@ -154,6 +185,9 @@ async function upsertRecursoEnOracle({ id_recurso, nombre, estado, activo }) {
   }
 }
 
+// ==============================
+// UPSERT RECURSO EN CASSANDRA (COPIAR UN RECURSO A CASSANDRA)
+// ==============================
 async function upsertRecursoEnCassandra({ id_recurso, nombre, estado, activo }) {
   await cassandraClient.execute(
     `INSERT INTO repl_recursos (id_recurso, nombre, estado, activo, fecha_sincronizacion)
@@ -174,6 +208,13 @@ async function upsertRecursoEnCassandra({ id_recurso, nombre, estado, activo }) 
  * @param {{id_recurso:number, tipo:string, placa:string, estado:string, activo?:boolean}} recurso
  * @returns {Promise<{oracle:boolean, cassandra:boolean, errores:string[]}>}
  */
+// ==============================
+// SINCRONIZAR RECURSO (FUNCIÓN PRINCIPAL: PROPAGA UN RECURSO)
+// ==============================
+// La llaman las rutas de recursos.js y alertas.js cada vez que un
+// recurso se crea, cambia de estado (disponible/ocupado/etc.), se
+// edita o se da de baja. Reparte la copia a Oracle, Cassandra y
+// Mongo, y devuelve el resumen de qué salió bien.
 async function sincronizarRecurso(recurso) {
   const payload = {
     id_recurso: recurso.id_recurso,
@@ -227,6 +268,9 @@ async function sincronizarRecurso(recurso) {
 // que hacer una consulta cruzada a Postgres solo para mostrar
 // "quién" hizo tal acción.
 
+// ==============================
+// UPSERT OPERADOR EN ORACLE (COPIAR UN OPERADOR A ORACLE)
+// ==============================
 async function upsertOperadorEnOracle({ id_operador, nombre, usuario, rol, activo }) {
   const oracledb = require("oracledb");
   const { getOracleConnection } = require("../config/oracle");
@@ -257,6 +301,9 @@ async function upsertOperadorEnOracle({ id_operador, nombre, usuario, rol, activ
   }
 }
 
+// ==============================
+// UPSERT OPERADOR EN CASSANDRA (COPIAR UN OPERADOR A CASSANDRA)
+// ==============================
 async function upsertOperadorEnCassandra({ id_operador, nombre, usuario, rol, activo }) {
   await cassandraClient.execute(
     `INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo, fecha_sincronizacion)
@@ -273,6 +320,13 @@ async function upsertOperadorEnCassandra({ id_operador, nombre, usuario, rol, ac
  * @param {{id_operador:number, nombre:string, usuario:string, rol:string, activo?:boolean}} operador
  * @returns {Promise<{oracle:boolean, cassandra:boolean, errores:string[]}>}
  */
+// ==============================
+// SINCRONIZAR OPERADOR (FUNCIÓN PRINCIPAL: PROPAGA UN OPERADOR)
+// ==============================
+// La llaman las rutas de recursos.js (alta/edición/baja de
+// operadores) para que Oracle, Cassandra y Mongo tengan siempre el
+// nombre/usuario/rol actualizado de cada operador, sin exponer
+// nunca la contraseña en esas copias.
 async function sincronizarOperador(operador) {
   const payload = {
     id_operador: operador.id_operador,
@@ -323,6 +377,9 @@ async function sincronizarOperador(operador) {
 // PostgreSQL y Cassandra
 // ---------------------------------------------------------------
 
+// ==============================
+// UPSERT SEDE EN POSTGRES (COPIAR UNA SEDE A POSTGRES)
+// ==============================
 async function upsertSedeEnPostgres({ id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo }) {
   await pgPool.query(
     `INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion)
@@ -338,6 +395,9 @@ async function upsertSedeEnPostgres({ id_sede, id_institucion, direccion, camas_
   );
 }
 
+// ==============================
+// UPSERT SEDE EN CASSANDRA (COPIAR UNA SEDE A CASSANDRA)
+// ==============================
 async function upsertSedeEnCassandra({ id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo }) {
   await cassandraClient.execute(
     `INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion)
@@ -354,6 +414,12 @@ async function upsertSedeEnCassandra({ id_sede, id_institucion, direccion, camas
  * @param {{id_sede:number, id_institucion:number, direccion:string, camas_disponibles?:number, calabozos_disponibles?:number, activo?:boolean}} sede
  * @returns {Promise<{postgres:boolean, cassandra:boolean, errores:string[]}>}
  */
+// ==============================
+// SINCRONIZAR SEDE (FUNCIÓN PRINCIPAL: PROPAGA UNA SEDE)
+// ==============================
+// La llaman las rutas de instituciones.js cada vez que una Sede se
+// crea, se edita (incluyendo el mapa de ubicación) o se da de baja.
+// Reparte la copia a Postgres, Cassandra y Mongo.
 async function sincronizarSede(sede) {
   const resultado = { postgres: false, cassandra: false, mongodb: false, errores: [] };
 

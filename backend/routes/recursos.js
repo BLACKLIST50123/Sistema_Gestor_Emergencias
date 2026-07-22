@@ -1,3 +1,13 @@
+// =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Este archivo junta dos módulos que viven en la misma base de
+// datos (PostgreSQL): los Operadores (los usuarios que usan el
+// sistema, con su rol) y los Recursos (ambulancias, patrullas,
+// bomberos). Acá se puede listar, crear, editar, cambiar de estado
+// y dar de baja tanto a unos como a otros, y cada cambio se propaga
+// automáticamente a las tablas espejo de las otras bases de datos.
+
 const express = require("express");
 const pgPool = require("../config/postgres");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
@@ -10,6 +20,9 @@ router.use(verificarToken);
 
 // ---------- OPERADORES ----------
 
+// ==============================
+// GET /OPERADORES (LISTAR OPERADORES ACTIVOS)
+// ==============================
 router.get("/operadores", async (req, res) => {
   const result = await pgPool.query(
     `SELECT id_operador, nombre, usuario, rol, activo, fecha_creacion FROM Operadores WHERE activo = TRUE ORDER BY id_operador`
@@ -17,16 +30,43 @@ router.get("/operadores", async (req, res) => {
   res.json(result.rows);
 });
 
+// PUNTO (agregado): valores permitidos, deben calzar con el <select>
+// de rol y de tipo en el frontend, y con los CHECK de la base de datos.
+const ROLES_VALIDOS = ["operador", "administrador"];
+const TIPOS_RECURSO_VALIDOS = ["ambulancia", "patrulla", "bomberos", "otro"];
+const ESTADOS_RECURSO_VALIDOS = ["disponible", "ocupado", "mantenimiento", "fuera_de_servicio"];
+
+// ==============================
+// POST /OPERADORES (CREAR UN OPERADOR NUEVO)
+// ==============================
+// Solo Administrador. Valida los campos obligatorios y el rol,
+// crea el operador en PostgreSQL (dueño) y avisa si el usuario ya
+// existía (usuario es UNIQUE), y propaga la copia a repl_operadores.
 router.post("/operadores", requireRole("administrador"), async (req, res) => {
   const { nombre, usuario, contrasena, rol } = req.body;
   if (!nombre || !usuario || !contrasena) {
     return res.status(400).json({ error: "nombre, usuario y contrasena son requeridos" });
   }
-  const result = await pgPool.query(
-    `INSERT INTO Operadores (nombre, usuario, contrasena_hash, rol) VALUES ($1,$2,$3,$4)
-     RETURNING id_operador, nombre, usuario, rol, activo`,
-    [nombre, usuario, contrasena, rol || "operador"]
-  );
+  if (rol && !ROLES_VALIDOS.includes(rol)) {
+    return res.status(400).json({ error: `rol debe ser uno de: ${ROLES_VALIDOS.join(", ")}` });
+  }
+
+  let result;
+  try {
+    result = await pgPool.query(
+      `INSERT INTO Operadores (nombre, usuario, contrasena_hash, rol) VALUES ($1,$2,$3,$4)
+       RETURNING id_operador, nombre, usuario, rol, activo`,
+      [nombre, usuario, contrasena, rol || "operador"]
+    );
+  } catch (err) {
+    // PUNTO (agregado): antes esto tiraba un error 500 feo de Postgres
+    // (violación de UNIQUE en "usuario"). Ahora se compara contra lo
+    // que ya existe en la BD y se devuelve un mensaje claro para el toast.
+    if (err.code === "23505") {
+      return res.status(400).json({ error: "Ya existe un operador con ese nombre de usuario" });
+    }
+    throw err;
+  }
   const operador = result.rows[0];
 
   // Replicidad: apenas nace el Operador (dueño: Postgres), se propaga
@@ -39,6 +79,11 @@ router.post("/operadores", requireRole("administrador"), async (req, res) => {
 // PUT editar un operador existente (nombre, usuario, rol y, opcionalmente,
 // contraseña nueva). Solo el Administrador puede hacerlo. Se usa desde el
 // panel de edición de "Usuarios y recursos" en el frontend.
+// ==============================
+// PUT /OPERADORES/:ID (EDITAR UN OPERADOR)
+// ==============================
+// La contraseña es opcional aquí (solo se cambia si mandan una
+// nueva); el resto de campos sí son obligatorios.
 router.put("/operadores/:id", requireRole("administrador"), async (req, res) => {
   const { nombre, usuario, rol, contrasena } = req.body;
   const idOperador = parseInt(req.params.id, 10);
@@ -46,22 +91,34 @@ router.put("/operadores/:id", requireRole("administrador"), async (req, res) => 
   if (!nombre || !usuario || !rol) {
     return res.status(400).json({ error: "nombre, usuario y rol son requeridos" });
   }
+  if (!ROLES_VALIDOS.includes(rol)) {
+    return res.status(400).json({ error: `rol debe ser uno de: ${ROLES_VALIDOS.join(", ")}` });
+  }
 
   let result;
-  if (contrasena) {
-    result = await pgPool.query(
-      `UPDATE Operadores SET nombre = $1, usuario = $2, rol = $3, contrasena_hash = $4
-       WHERE id_operador = $5 AND activo = TRUE
-       RETURNING id_operador, nombre, usuario, rol, activo`,
-      [nombre, usuario, rol, contrasena, idOperador]
-    );
-  } else {
-    result = await pgPool.query(
-      `UPDATE Operadores SET nombre = $1, usuario = $2, rol = $3
-       WHERE id_operador = $4 AND activo = TRUE
-       RETURNING id_operador, nombre, usuario, rol, activo`,
-      [nombre, usuario, rol, idOperador]
-    );
+  try {
+    if (contrasena) {
+      result = await pgPool.query(
+        `UPDATE Operadores SET nombre = $1, usuario = $2, rol = $3, contrasena_hash = $4
+         WHERE id_operador = $5 AND activo = TRUE
+         RETURNING id_operador, nombre, usuario, rol, activo`,
+        [nombre, usuario, rol, contrasena, idOperador]
+      );
+    } else {
+      result = await pgPool.query(
+        `UPDATE Operadores SET nombre = $1, usuario = $2, rol = $3
+         WHERE id_operador = $4 AND activo = TRUE
+         RETURNING id_operador, nombre, usuario, rol, activo`,
+        [nombre, usuario, rol, idOperador]
+      );
+    }
+  } catch (err) {
+    // PUNTO (agregado): mismo caso que en el POST, pero al editar
+    // (por ejemplo si le cambian el usuario a uno que ya usa otro operador).
+    if (err.code === "23505") {
+      return res.status(400).json({ error: "Ya existe un operador con ese nombre de usuario" });
+    }
+    throw err;
   }
 
   const operador = result.rows[0];
@@ -76,8 +133,20 @@ router.put("/operadores/:id", requireRole("administrador"), async (req, res) => 
 });
 
 // DELETE en cascada: esto es lo que tu profe quiere ver funcionando
+// ==============================
+// DELETE /OPERADORES/:ID (DAR DE BAJA UN OPERADOR)
+// ==============================
+// Delega toda la baja en cadena (Postgres + Oracle + Cassandra +
+// Mongo) a cascadeService.eliminarOperadorEnCascada.
 router.delete("/operadores/:id", requireRole("administrador"), async (req, res) => {
   const idOperador = parseInt(req.params.id, 10);
+
+  // No permitir que un administrador se elimine a sí mismo (req.operador
+  // viene del JWT, ver authMiddleware.js — ahí sabemos quién está logueado).
+  if (idOperador === req.operador.id_operador) {
+    return res.status(400).json({ error: "No puedes eliminar tu propio usuario mientras tienes la sesión iniciada" });
+  }
+
   const resultado = await eliminarOperadorEnCascada(idOperador);
   res.json({
     mensaje: `Operador ${idOperador} desactivado en cascada en las 4 bases de datos`,
@@ -87,6 +156,9 @@ router.delete("/operadores/:id", requireRole("administrador"), async (req, res) 
 
 // ---------- RECURSOS ----------
 
+// ==============================
+// GET /RECURSOS (LISTAR RECURSOS ACTIVOS)
+// ==============================
 router.get("/recursos", async (req, res) => {
   const result = await pgPool.query(
     `SELECT * FROM Recursos WHERE activo = TRUE ORDER BY id_recurso`
@@ -105,6 +177,9 @@ router.get("/recursos", async (req, res) => {
 //   accidente  -> 1° Ambulancias, 2° Patrullas, 3° Bomberos
 // El orden se calcula en el backend (geoService.js) para que el
 // frontend solo tenga que pintar la lista tal cual la recibe.
+// ==============================
+// GET /RECURSOS/DESPACHO/:TIPOEMERGENCIA (RECURSOS ORDENADOS PARA DESPACHAR)
+// ==============================
 router.get("/recursos/despacho/:tipoEmergencia", async (req, res) => {
   const { tipoEmergencia } = req.params;
   const result = await pgPool.query(
@@ -114,12 +189,37 @@ router.get("/recursos/despacho/:tipoEmergencia", async (req, res) => {
   res.json(ordenados);
 });
 
+// ==============================
+// POST /RECURSOS (CREAR UN RECURSO NUEVO)
+// ==============================
+// Solo Administrador. Exige tipo y placa válidos, avisa si la placa
+// ya está registrada (placa es UNIQUE), y propaga la copia a
+// repl_recursos en Oracle y Cassandra.
 router.post("/recursos", requireRole("administrador"), async (req, res) => {
   const { tipo, placa, estado } = req.body;
-  const result = await pgPool.query(
-    `INSERT INTO Recursos (tipo, placa, estado) VALUES ($1,$2,$3) RETURNING *`,
-    [tipo, placa, estado || "disponible"]
-  );
+  // PUNTO (agregado): antes se podía mandar el formulario sin tipo/placa
+  // y la única barrera era el CHECK de la base de datos (un error 500 feo).
+  if (!tipo || !placa || !placa.trim()) {
+    return res.status(400).json({ error: "tipo y placa son requeridos" });
+  }
+  if (!TIPOS_RECURSO_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_RECURSO_VALIDOS.join(", ")}` });
+  }
+
+  let result;
+  try {
+    result = await pgPool.query(
+      `INSERT INTO Recursos (tipo, placa, estado) VALUES ($1,$2,$3) RETURNING *`,
+      [tipo, placa, estado || "disponible"]
+    );
+  } catch (err) {
+    // PUNTO (agregado): compara contra lo que ya existe en la BD
+    // (placa es UNIQUE) y devuelve un mensaje claro para el toast.
+    if (err.code === "23505") {
+      return res.status(400).json({ error: "Ya existe un recurso con esa placa" });
+    }
+    throw err;
+  }
   const recurso = result.rows[0];
 
   // Replicidad: apenas nace el Recurso (dueño: Postgres), se propaga
@@ -132,16 +232,34 @@ router.post("/recursos", requireRole("administrador"), async (req, res) => {
 // PUT editar un recurso completo (tipo, placa, estado). Pensado para el
 // panel de edición del Administrador (distinto del PUT /estado, que usa
 // el flujo de despacho para solo cambiar el estado al asignar/liberar).
+// ==============================
+// PUT /RECURSOS/:ID (EDITAR UN RECURSO)
+// ==============================
 router.put("/recursos/:id", requireRole("administrador"), async (req, res) => {
   const { tipo, placa, estado } = req.body;
-  if (!tipo || !placa) {
+  if (!tipo || !placa || !placa.trim()) {
     return res.status(400).json({ error: "tipo y placa son requeridos" });
   }
-  const result = await pgPool.query(
-    `UPDATE Recursos SET tipo = $1, placa = $2, estado = COALESCE($3, estado)
-     WHERE id_recurso = $4 AND activo = TRUE RETURNING *`,
-    [tipo, placa, estado || null, req.params.id]
-  );
+  if (!TIPOS_RECURSO_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_RECURSO_VALIDOS.join(", ")}` });
+  }
+  if (estado && !ESTADOS_RECURSO_VALIDOS.includes(estado)) {
+    return res.status(400).json({ error: `estado debe ser uno de: ${ESTADOS_RECURSO_VALIDOS.join(", ")}` });
+  }
+
+  let result;
+  try {
+    result = await pgPool.query(
+      `UPDATE Recursos SET tipo = $1, placa = $2, estado = COALESCE($3, estado)
+       WHERE id_recurso = $4 AND activo = TRUE RETURNING *`,
+      [tipo, placa, estado || null, req.params.id]
+    );
+  } catch (err) {
+    if (err.code === "23505") {
+      return res.status(400).json({ error: "Ya existe un recurso con esa placa" });
+    }
+    throw err;
+  }
   const recurso = result.rows[0];
   if (!recurso) {
     return res.status(404).json({ error: "Recurso no encontrado o inactivo" });
@@ -152,22 +270,38 @@ router.put("/recursos/:id", requireRole("administrador"), async (req, res) => {
   res.json({ ...recurso, replicas });
 });
 
+// ==============================
+// PUT /RECURSOS/:ID/ESTADO (CAMBIAR SOLO EL ESTADO DE UN RECURSO)
+// ==============================
+// Se usa, por ejemplo, cuando un recurso vuelve de mantenimiento.
+// No admite un texto libre: el estado debe ser uno de los 4 válidos.
 router.put("/recursos/:id/estado", requireRole("operador", "administrador"), async (req, res) => {
   const { estado } = req.body;
+  // PUNTO (agregado): antes se podía mandar vacío o cualquier texto,
+  // y si el recurso no existía igual respondía 200 con un objeto vacío.
+  if (!estado || !ESTADOS_RECURSO_VALIDOS.includes(estado)) {
+    return res.status(400).json({ error: `estado debe ser uno de: ${ESTADOS_RECURSO_VALIDOS.join(", ")}` });
+  }
   const result = await pgPool.query(
     `UPDATE Recursos SET estado = $1 WHERE id_recurso = $2 RETURNING *`,
     [estado, req.params.id]
   );
   const recurso = result.rows[0];
+  if (!recurso) {
+    return res.status(404).json({ error: "Recurso no encontrado" });
+  }
 
   // El estado ("disponible","ocupado", etc.) es justo el campo que
   // viven las tablas repl_recursos, así que cada cambio de estado
   // también debe re-sincronizarse (no solo la creación).
-  const replicas = recurso ? await sincronizarRecurso(recurso) : null;
+  const replicas = await sincronizarRecurso(recurso);
 
   res.json({ ...recurso, replicas });
 });
 
+// ==============================
+// DELETE /RECURSOS/:ID (DAR DE BAJA UN RECURSO)
+// ==============================
 router.delete("/recursos/:id", requireRole("administrador"), async (req, res) => {
   const result = await pgPool.query(
     `UPDATE Recursos SET activo = FALSE WHERE id_recurso = $1 RETURNING *`,

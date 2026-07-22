@@ -1,4 +1,16 @@
 #!/bin/bash
+# Este archivo .sh (Shell Script) solo funciona en Git Bash o Linux, ya que la consola 
+# normal de Windows (CMD) no entiende comandos como #!/bin/bash, until, do, ni sleep.
+# =========================================================
+# QUÉ HACE ESTE ARCHIVO 
+# =========================================================
+# Este script termina de dejar la base de datos lista después de
+# "docker compose up -d". Espera a que Cassandra y MongoDB estén
+# despiertas, y les mete adentro las tablas/colecciones (schema) y
+# los datos de ejemplo (seed). Sin correr esto, Cassandra y Mongo
+# quedan vacías (a diferencia de Postgres y Oracle, que se llenan
+# solas).
+#
 # =========================================================
 # Inicializa Cassandra y MongoDB con schema + datos de ejemplo.
 # PostgreSQL y Oracle ya se auto-inicializan vía docker-compose

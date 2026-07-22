@@ -1,3 +1,13 @@
+// =========================================================
+// QUÉ HACE ESTE ARCHIVO
+// =========================================================
+// Aquí viven todas las rutas relacionadas a las Alertas (las
+// emergencias que aparecen como pines en el mapa): crearlas, verlas,
+// cambiarles el estado, asignarles un recurso (ambulancia/patrulla/
+// bomberos), armar el "historial emergencias" de un caso (juntando datos de
+// las 4 bases de datos) y eliminarlas del historial. Las alertas en
+// sí viven guardadas en Cassandra.
+
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const cassandraClient = require("../config/cassandra");
@@ -9,7 +19,11 @@ const { eliminarAlertaEnCascada } = require("../services/cascadeService");
 const router = express.Router();
 router.use(verificarToken);
 
-// GET todas las alertas activas (para pintar el mapa)
+// ==============================
+// GET /ALERTAS (LISTAR TODAS LAS ALERTAS PARA EL MAPA)
+// ==============================
+// Trae absolutamente todas las alertas guardadas en Cassandra, para
+// que el frontend pinte los pines en el mapa principal.
 router.get("/alertas", async (req, res) => {
   const result = await cassandraClient.execute(
     `SELECT * FROM Alertas`,
@@ -19,7 +33,12 @@ router.get("/alertas", async (req, res) => {
   res.json(result.rows);
 });
 
-// GET alertas por estado (ej: pendientes para el dashboard)
+// ==============================
+// GET /ALERTAS/ESTADO/:ESTADO (LISTAR ALERTAS POR ESTADO)
+// ==============================
+// Trae solo las alertas que están en un estado puntual (por ejemplo
+// "pendiente" o "cerrada"). Se usa en el dashboard y en el módulo de
+// Evidencias (que solo muestra las alertas ya cerradas).
 router.get("/alertas/estado/:estado", async (req, res) => {
   const result = await cassandraClient.execute(
     `SELECT * FROM Alertas_Por_Estado WHERE estado = ?`,
@@ -29,14 +48,35 @@ router.get("/alertas/estado/:estado", async (req, res) => {
   res.json(result.rows);
 });
 
-// POST nueva alerta -> esto es lo que dispara el pin en el mapa
-// y guarda la ubicación en la BD, tal como pediste
+// PUNTO (agregado): valores permitidos, deben coincidir siempre con
+// las opciones del <select> en el frontend (index.html) y con lo que
+// espera geoService.js para ordenar la prioridad de despacho.
+const TIPOS_ALERTA_VALIDOS = ["medica", "seguridad", "incendio", "accidente"];
+const ESTADOS_ALERTA_VALIDOS = ["pendiente", "en_atencion", "cerrada"];
+
+// ==============================
+// POST /ALERTAS (CREAR UNA NUEVA EMERGENCIA)
+// ==============================
+// Esto es lo que dispara el pin en el mapa: valida que venga un tipo
+// válido, una descripción y la ubicación, y guarda la alerta en las
+// 3 tablas de Cassandra al mismo tiempo (con un "batch", para que
+// las 3 queden siempre en el mismo estado).
 router.post("/alertas", requireRole("operador", "administrador"), async (req, res) => {
   const { tipo, descripcion, latitud, longitud, direccion_referencial, id_recurso_asignado } = req.body;
   const id_alerta = uuidv4();
   const ahora = new Date();
   const id_operador_reporta = req.operador.id_operador;
 
+  // PUNTO (agregado): sin esto, se podía crear una alerta sin tipo
+  // válido o sin descripción, y quedaba "invisible" para el flujo de
+  // prioridad de despacho (geoService.js) porque no calzaba con
+  // ningún tipo conocido.
+  if (!tipo || !TIPOS_ALERTA_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ error: `El tipo de alerta es obligatorio y debe ser uno de: ${TIPOS_ALERTA_VALIDOS.join(", ")}` });
+  }
+  if (!descripcion || !descripcion.trim()) {
+    return res.status(400).json({ error: "La descripción de la alerta es obligatoria" });
+  }
   if (latitud == null || longitud == null) {
     return res.status(400).json({ error: "latitud y longitud son requeridas" });
   }
@@ -79,6 +119,13 @@ router.post("/alertas", requireRole("operador", "administrador"), async (req, re
 // asocia a una alerta (Cassandra). "Trigger": ese mismo request
 // cambia el estado del recurso a 'ocupado' (= "En Emergencia" en
 // la UI) para que ya no aparezca como disponible para otra alerta.
+// ==============================
+// PUT /ALERTAS/:ID/ASIGNAR-RECURSO (MANDAR UNA AMBULANCIA/PATRULLA/BOMBEROS)
+// ==============================
+// El operador elige qué recurso atiende la emergencia. Esta ruta
+// marca ese recurso como "ocupado" en PostgreSQL, propaga ese cambio
+// a las réplicas, y deja la alerta en Cassandra como "en_atencion"
+// con el recurso (y la sede sugerida, si se eligió) ya vinculados.
 router.put("/alertas/:id/asignar-recurso", requireRole("operador", "administrador"), async (req, res) => {
   const id_alerta = req.params.id;
   const { id_recurso, id_sede_derivacion } = req.body;
@@ -115,11 +162,27 @@ router.put("/alertas/:id/asignar-recurso", requireRole("operador", "administrado
   });
 });
 
-// PUT cambiar estado de una alerta (ej: pendiente -> en_atencion -> cerrada)
+// ==============================
+// PUT /ALERTAS/:ID/ESTADO (CAMBIAR EL ESTADO DE UNA EMERGENCIA)
+// ==============================
+// Mueve una alerta entre pendiente -> en_atencion -> cerrada.
+// Como en Cassandra el estado es parte de la "llave" de la tabla
+// Alertas_Por_Estado, hay que borrar la fila del estado viejo e
+// insertar una nueva en el estado nuevo (no se puede simplemente
+// "actualizar" esa columna ahí). Si la alerta se cierra y tenía un
+// recurso asignado, ese recurso se libera automáticamente.
 router.put("/alertas/:id/estado", requireRole("operador", "administrador"), async (req, res) => {
   const { estado } = req.body;
   const id_alerta = req.params.id;
   const ahora = new Date();
+
+  // PUNTO (agregado): sin esto, se podía mandar cualquier texto como
+  // estado y quedaba una fila "huérfana" en Alertas_Por_Estado que
+  // nunca aparece en ninguna pestaña del frontend (ni pendientes, ni
+  // en atención, ni cerradas).
+  if (!estado || !ESTADOS_ALERTA_VALIDOS.includes(estado)) {
+    return res.status(400).json({ error: `El estado es obligatorio y debe ser uno de: ${ESTADOS_ALERTA_VALIDOS.join(", ")}` });
+  }
 
   // 1) Obtener los datos actuales de la alerta ANTES de actualizarla
   const alertaResult = await cassandraClient.execute(
@@ -189,13 +252,20 @@ router.put("/alertas/:id/estado", requireRole("operador", "administrador"), asyn
 });
 
 // -----------------------------------------------------------
-// PUNTO 4: HISTORIAL 360°
+// PUNTO 4: HISTORIAL EMERGENCIAS
 // -----------------------------------------------------------
 // Junta en una sola respuesta lo que está repartido en las 4 BD:
 //   - Cassandra: los datos de la alerta en sí
 //   - PostgreSQL: el recurso que atendió (si hubo uno asignado)
 //   - Oracle: la sede/institución de derivación (si hubo una)
 //   - MongoDB: las evidencias (fotos/videos) subidas al cerrar el caso
+// ==============================
+// GET /HISTORIAL/:ID_ALERTA (VER TODO SOBRE UNA EMERGENCIA)
+// ==============================
+// Arma en un solo JSON toda la "ficha" de un caso, yendo a buscar un
+// pedacito a cada una de las 4 bases de datos. Así el frontend
+// pinta la pantalla del Historial 360° con una sola llamada, sin
+// tener que hacer 4 peticiones por separado.
 router.get("/historial/:id_alerta", async (req, res) => {
   const id_alerta = req.params.id_alerta;
   const historial = { alerta: null, recurso: null, sede: null, institucion: null, evidencias: [] };
@@ -261,6 +331,12 @@ router.get("/historial/:id_alerta", async (req, res) => {
 // 3 tablas de Cassandra y desactiva (soft delete) las evidencias
 // asociadas en MongoDB.
 // -----------------------------------------------------------
+// ==============================
+// DELETE /ALERTAS/:ID (BORRAR UNA EMERGENCIA DEL HISTORIAL)
+// ==============================
+// Solo el Administrador puede usar esto. Delega todo el trabajo
+// pesado (borrar de las 3 tablas de Cassandra y desactivar sus
+// evidencias en Mongo) a cascadeService.eliminarAlertaEnCascada.
 router.delete("/alertas/:id", requireRole("administrador"), async (req, res) => {
   const resultado = await eliminarAlertaEnCascada(req.params.id);
   if (resultado.errores.length && !resultado.cassandra) {

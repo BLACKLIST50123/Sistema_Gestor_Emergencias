@@ -1,3 +1,13 @@
+// =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Aquí viven dos cosas relacionadas: las Instituciones (Hospitales,
+// Comisarías, Bomberos) y sus Sedes con la capacidad que tienen
+// (camas o calabozos disponibles). Todo esto vive en Oracle. También
+// está la lógica de "a qué sede conviene derivar" según cercanía y
+// tipo de emergencia, y los botones de "restar una cama/calabozo"
+// cuando se deriva a alguien.
+
 const express = require("express");
 const { getOracleConnection } = require("../config/oracle");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
@@ -8,6 +18,9 @@ const { ordenarSedesPorRamaYCercania, capacidadVisible } = require("../services/
 const router = express.Router();
 router.use(verificarToken);
 
+// ==============================
+// GET /INSTITUCIONES (LISTAR INSTITUCIONES ACTIVAS)
+// ==============================
 router.get("/instituciones", async (req, res) => {
   const conn = await getOracleConnection();
   try {
@@ -20,8 +33,24 @@ router.get("/instituciones", async (req, res) => {
   }
 });
 
+// PUNTO (agregado): debe calzar con el <select> de tipo del frontend
+// y con el CHECK de la tabla Instituciones en Oracle.
+const TIPOS_INSTITUCION_VALIDOS = ["Hospital", "Comisaria", "Bomberos"];
+
+// ==============================
+// POST /INSTITUCIONES (CREAR UNA INSTITUCIÓN NUEVA)
+// ==============================
+// Solo el Administrador puede hacerlo. Valida que venga nombre y un
+// tipo permitido, la crea en Oracle y propaga una copia a las tablas
+// espejo repl_instituciones en Postgres y Cassandra.
 router.post("/instituciones", requireRole("administrador"), async (req, res) => {
   const { nombre, tipo } = req.body;
+  if (!nombre || !nombre.trim() || !tipo) {
+    return res.status(400).json({ error: "nombre y tipo son requeridos" });
+  }
+  if (!TIPOS_INSTITUCION_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_INSTITUCION_VALIDOS.join(", ")}` });
+  }
   const conn = await getOracleConnection();
   try {
     const result = await conn.execute(
@@ -44,11 +73,17 @@ router.post("/instituciones", requireRole("administrador"), async (req, res) => 
 });
 
 // PUT editar una institución existente (nombre, tipo). Solo Administrador.
+// ==============================
+// PUT /INSTITUCIONES/:ID (EDITAR UNA INSTITUCIÓN)
+// ==============================
 router.put("/instituciones/:id", requireRole("administrador"), async (req, res) => {
   const { nombre, tipo } = req.body;
   const idInstitucion = parseInt(req.params.id, 10);
   if (!nombre || !tipo) {
     return res.status(400).json({ error: "nombre y tipo son requeridos" });
+  }
+  if (!TIPOS_INSTITUCION_VALIDOS.includes(tipo)) {
+    return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_INSTITUCION_VALIDOS.join(", ")}` });
   }
   const conn = await getOracleConnection();
   try {
@@ -70,6 +105,11 @@ router.put("/instituciones/:id", requireRole("administrador"), async (req, res) 
   }
 });
 
+// ==============================
+// DELETE /INSTITUCIONES/:ID (DAR DE BAJA UNA INSTITUCIÓN)
+// ==============================
+// Delega todo el trabajo de la baja en cadena (institución + sus
+// sedes + réplicas) a cascadeService.eliminarInstitucionEnCascada.
 router.delete("/instituciones/:id", requireRole("administrador"), async (req, res) => {
   const resultado = await eliminarInstitucionEnCascada(parseInt(req.params.id, 10));
   res.json({ mensaje: "Institución desactivada en cascada", detalle: resultado });
@@ -77,6 +117,12 @@ router.delete("/instituciones/:id", requireRole("administrador"), async (req, re
 
 // ---------- SEDES / CAPACIDAD ----------
 
+// ==============================
+// GET /SEDES (LISTAR TODAS LAS SEDES ACTIVAS)
+// ==============================
+// Trae cada sede junto con el nombre y tipo de su institución dueña
+// (con un JOIN), para no tener que hacer una consulta aparte por
+// cada sede en el frontend.
 router.get("/sedes", async (req, res) => {
   const conn = await getOracleConnection();
   try {
@@ -105,6 +151,13 @@ router.get("/sedes", async (req, res) => {
 //   incendio   -> Compañías de Bomberos primero
 //   seguridad  -> Comisarías primero
 //   accidente  -> Hospitales primero
+// ==============================
+// GET /SEDES/DERIVACION (¿A QUÉ SEDE CONVIENE MANDAR A LA PERSONA?)
+// ==============================
+// La usa el módulo de Despacho: recibe el tipo de emergencia y la
+// ubicación de la alerta, calcula qué tan lejos está cada sede
+// (geoService.js) y devuelve la lista ya ordenada con su capacidad
+// visible (camas o calabozos, según el tipo de institución).
 router.get("/sedes/derivacion", async (req, res) => {
   const { tipo, lat, lng } = req.query;
   const latOrigen = parseFloat(lat);
@@ -147,6 +200,13 @@ router.get("/sedes/derivacion", async (req, res) => {
   }
 });
 
+// ==============================
+// POST /SEDES (CREAR UNA SEDE NUEVA)
+// ==============================
+// Solo Administrador. Exige institución, dirección y, desde el
+// último cambio pedido, también la ubicación (latitud/longitud)
+// seleccionada en el mapa del formulario "Agregar Sede". Crea la
+// sede en Oracle y propaga la copia a repl_sedes.
 router.post("/sedes", requireRole("administrador"), async (req, res) => {
   const { id_institucion, direccion, camas_disponibles, calabozos_disponibles, latitud, longitud } = req.body;
 
@@ -197,6 +257,9 @@ router.post("/sedes", requireRole("administrador"), async (req, res) => {
 });
 
 // PUT editar una sede existente. Solo Administrador.
+// ==============================
+// PUT /SEDES/:ID (EDITAR UNA SEDE, INCLUYE MOVER SU UBICACIÓN EN EL MAPA)
+// ==============================
 router.put("/sedes/:id", requireRole("administrador"), async (req, res) => {
   const { id_institucion, direccion, camas_disponibles, calabozos_disponibles, latitud, longitud } = req.body;
   const idSede = parseInt(req.params.id, 10);
@@ -239,6 +302,9 @@ router.put("/sedes/:id", requireRole("administrador"), async (req, res) => {
 });
 
 // DELETE (soft) una sede. Solo Administrador.
+// ==============================
+// DELETE /SEDES/:ID (DAR DE BAJA UNA SEDE)
+// ==============================
 router.delete("/sedes/:id", requireRole("administrador"), async (req, res) => {
   const idSede = parseInt(req.params.id, 10);
   const conn = await getOracleConnection();
@@ -276,6 +342,13 @@ router.delete("/sedes/:id", requireRole("administrador"), async (req, res) => {
 });
 
 // Derivar paciente: usa el procedimiento sp_derivar_paciente (resta 1 cama)
+// ==============================
+// POST /SEDES/:ID/DERIVAR-PACIENTE (RESTAR UNA CAMA DISPONIBLE)
+// ==============================
+// Llama al procedimiento almacenado de Oracle que resta una cama a
+// esa sede, y después vuelve a leer el dato actualizado para
+// propagarlo a repl_sedes (para que las réplicas no queden con el
+// número de camas viejo).
 router.post("/sedes/:id/derivar-paciente", requireRole("operador", "administrador"), async (req, res) => {
   const idSede = parseInt(req.params.id, 10);
   const conn = await getOracleConnection();
@@ -303,6 +376,11 @@ router.post("/sedes/:id/derivar-paciente", requireRole("operador", "administrado
   }
 });
 
+// ==============================
+// POST /SEDES/:ID/DERIVAR-DETENIDO (RESTAR UN CALABOZO DISPONIBLE)
+// ==============================
+// Igual que la ruta anterior, pero para Comisarías: descuenta un
+// calabozo disponible y propaga el nuevo valor a las réplicas.
 router.post("/sedes/:id/derivar-detenido", requireRole("operador", "administrador"), async (req, res) => {
   const idSede = parseInt(req.params.id, 10);
   const conn = await getOracleConnection();

@@ -1,7 +1,28 @@
 -- =========================================================
+-- QUÉ HACE ESTE ARCHIVO (en simple)
+-- =========================================================
+-- Este archivo crea las tablas de Oracle, la base de datos dueña de
+-- las Instituciones (Hospital/Comisaría/Bomberos) y sus Sedes con
+-- la capacidad que tienen (camas o calabozos). También trae las
+-- tablas espejo (repl_recursos, repl_operadores) que guardan una
+-- copia de lo que vive en PostgreSQL, y dos procedimientos que
+-- descuentan una cama o un calabozo cada vez que se deriva a
+-- alguien.
+
+-- =========================================================
 -- ORACLE - Módulo: GESTIÓN INSTITUCIONAL
 -- Sistema de Gestión de Emergencias (SGE)
 -- =========================================================
+
+-- PUNTO (agregado / corregido): Docker ejecuta este script COMO SYS
+-- y CONECTADO AL CDB RAÍZ (no a nuestro PDB, ni como nuestro usuario
+-- de la app). Sin estas 2 líneas, las tablas se crean en el lugar
+-- equivocado (dueñas de SYS, fuera del PDB FREEPDB1) y el backend
+-- —que se conecta como sge_user a FREEPDB1— nunca las encuentra
+-- (por eso antes tocaba crearlas a mano). Documentado en:
+-- https://github.com/gvenzl/oci-oracle-free
+ALTER SESSION SET CONTAINER = FREEPDB1;
+ALTER SESSION SET CURRENT_SCHEMA = sge_user;
 
 -- -------------------------------------------------
 -- Tabla: Instituciones
@@ -82,6 +103,12 @@ CREATE INDEX idx_repl_operadores_activo ON repl_operadores(activo);
 -- (esto es lo que tu profe probablemente quiere ver en acción:
 --  una operación de negocio real, no solo un CRUD plano)
 -- -------------------------------------------------
+-- ==============================
+-- SP_DERIVAR_PACIENTE (PROCEDIMIENTO PARA RESTAR UNA CAMA)
+-- ==============================
+-- Se llama cuando el operador deriva a un paciente a una sede: le
+-- resta 1 a las camas disponibles de esa sede. Si ya no quedan
+-- camas, avisa con un error en vez de dejar el número en negativo.
 CREATE OR REPLACE PROCEDURE sp_derivar_paciente (
     p_id_sede IN NUMBER
 ) AS
@@ -105,6 +132,11 @@ END sp_derivar_paciente;
 /
 
 -- Equivalente para calabozos
+-- ==============================
+-- SP_DERIVAR_DETENIDO (PROCEDIMIENTO PARA RESTAR UN CALABOZO)
+-- ==============================
+-- Lo mismo que el procedimiento de arriba, pero para Comisarías:
+-- resta 1 a los calabozos disponibles cuando se deriva a un detenido.
 CREATE OR REPLACE PROCEDURE sp_derivar_detenido (
     p_id_sede IN NUMBER
 ) AS

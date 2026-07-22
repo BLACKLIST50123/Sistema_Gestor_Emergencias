@@ -1,4 +1,12 @@
 -- =========================================================
+-- QUÉ HACE ESTE ARCHIVO (en simple)
+-- =========================================================
+-- Llena PostgreSQL con datos de ejemplo: 5 operadores (usuarios del
+-- sistema), 6 recursos (ambulancias/patrullas/bomberos) y las copias
+-- de Instituciones/Sedes que "nacieron" en Oracle, para que la base
+-- de datos no arranque vacía y se pueda probar el sistema de una vez.
+
+-- =========================================================
 -- SEED DATA - PostgreSQL (Usuarios y Recursos)
 -- Nota: las contraseñas aquí están en texto plano SOLO como
 -- referencia legible. En producción real deben quedar hasheadas

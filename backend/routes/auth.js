@@ -1,3 +1,13 @@
+// =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Este archivo tiene la única puerta de entrada al sistema: el
+// login. Recibe usuario y contraseña, revisa si existen en
+// PostgreSQL, y si todo calza entrega un "token" (como una pulserita
+// de acceso) que el frontend guarda y manda en cada petición
+// siguiente para demostrar que ya inició sesión. También deja un
+// registro en la tabla de auditoría cada vez que alguien entra.
+
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -5,7 +15,14 @@ const pgPool = require("../config/postgres");
 
 const router = express.Router();
 
-// POST /api/auth/login
+// ==============================
+// POST /LOGIN (INICIAR SESIÓN)
+// ==============================
+// Busca al operador por su usuario, compara la contraseña que
+// escribió contra la que está guardada en la base de datos, y si
+// coinciden le entrega un token JWT válido por 8 horas más sus datos
+// básicos (nombre, usuario, rol). También registra el inicio de
+// sesión en Auditoria_Acciones, para saber quién entró y cuándo.
 router.post("/login", async (req, res) => {
   const { usuario, contrasena } = req.body;
   if (!usuario || !contrasena) {

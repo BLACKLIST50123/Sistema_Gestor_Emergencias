@@ -1,10 +1,43 @@
 // =========================================================
-// SGE — App frontend
-// Conecta con el backend real en API_BASE (ajusta si es necesario)
+// QUÉ HACE ESTE ARCHIVO
 // =========================================================
-//
-// NOTA SOBRE ROLES (v2): el sistema ahora trabaja con 2 roles:
-//   - operador       -> sus módulos operativos (Alertas, Despacho,
+// Este es el "cerebro" de todo lo que se ve en pantalla. Se encarga
+// de: mandar y traer datos del backend (login, alertas, recursos,
+// operadores, instituciones, sedes, evidencias, historial), pintar
+// las tablas y el mapa, mostrar las notificaciones (toasts) y los
+// modales, y refrescar la pantalla sola cada cierto tiempo. Está
+// ordenado por módulo: 
+// - Login
+// - Mapa de Alertas
+// - Despacho
+// - Usuarios/Recursos
+// - Instituciones/Sedes
+// - Evidencias
+// - Historial Emergencias
+// - Panel Supervisor
+// cada uno con sus funciones agrupadas.
+
+// =========================================================
+// ÍNDICE DEL ARCHIVO (app.js)
+// =========================================================
+// 1. CONFIGURACIÓN Y ESTADO GLOBAL (Variables, API, Login)
+// 2. UTILIDADES (Notificaciones Toasts, Modales de Confirmación, Permisos)
+// 3. MÓDULO: MAPA Y ALERTAS (Leaflet, Marcadores, Carga de Alertas activas)
+// 4. MÓDULO: DESPACHO (Asignación por cercanía, Cierre de Casos)
+// 5. MÓDULO: USUARIOS Y RECURSOS (CRUD de Operadores y Unidades)
+// 6. MÓDULO: INSTITUCIONES Y SEDES (CRUD de Hospitales/Bomberos)
+// 7. MÓDULO: PANELES DE EDICIÓN (Formularios reutilizables)
+// 8. MÓDULO: EVIDENCIAS (Subir archivos, fotos, audios - MongoDB)
+// 9. MÓDULO: HISTORIAL 360° (Búsqueda de casos cerrados en Cassandra)
+// 10. MÓDULO: PANEL SUPERVISOR (KPIs y métricas globales)
+// 11. REACTIVIDAD Y POLLING (Actualización automática)
+// =========================================================
+// SGE — App frontend
+// Conecta con el backend real en API_BASE 
+// =========================================================
+
+// NOTA SOBRE ROLES:      eltrabaja con 2 roles:
+//   - operador       ->  sus módulos operativos (Emergencias, Despacho,
 //                        Evidencias) + acceso de SOLO LECTURA al
 //                        Panel Supervisor y al Historial 360°
 //                        (funciones que antes tenía un rol
@@ -12,7 +45,7 @@
 //   - administrador  -> todo lo anterior, más el CRUD completo
 //                        (crear/editar/eliminar) de Usuarios,
 //                        Recursos, Instituciones, Sedes y capacidad,
-//                        y el botón de eliminar en el Historial 360°.
+//                        y el botón de eliminar en el Historial Emergencias
 // La seguridad real vive en el backend (requireRole() en cada ruta);
 // esto de aquí es solo para que la interfaz se vea ordenada.
 
@@ -58,14 +91,27 @@ const marcadoresSedes = {};
 const POLLING_MS = 9000;
 let pollingHandle = null;
 
+// ==============================
+// ESADMINISTRADOR (¿EL USUARIO LOGUEADO ES ADMIN?)
+// ==============================
+// Revisa el rol guardado del operador que inició sesión y dice si es
+// administrador, para mostrar u ocultar botones de crear/editar/eliminar.
 function esAdministrador() {
+  // Verificamos si el usuario logueado es 'administrador' (true) o si es solo un operador normal (false).
   return OPERADOR && OPERADOR.rol === "administrador";
 }
 
 // Oracle devuelve las columnas en MAYÚSCULAS (ID_INSTITUCION, NOMBRE...).
 // Este helper normaliza cualquier fila a minúsculas para no repetir
 // "campo.CAMPO ?? campo.campo" por todos lados.
+// ==============================
+// NORMALIZARCLAVES (ACOMODA LAS MAYÚSCULAS QUE MANDA ORACLE)
+// ==============================
+// Oracle devuelve las columnas en MAYÚSCULAS; esta función las pasa a
+// minúsculas para que el resto del código no tenga que fijarse de qué
+// motor vino cada dato.
 function normalizarClaves(obj) {
+  // Esta utilidad convierte todas las llaves (keys) de un objeto JSON a minúsculas para evitar problemas de mayúsculas/minúsculas al leer datos de la base de datos.
   if (!obj || typeof obj !== "object") return obj;
   const out = {};
   Object.keys(obj).forEach((k) => { out[k.toLowerCase()] = obj[k]; });
@@ -73,6 +119,12 @@ function normalizarClaves(obj) {
 }
 
 // ---------- Helper de fetch autenticado ----------
+// ==============================
+// API (FUNCIÓN CENTRAL PARA HABLAR CON EL BACKEND)
+// ==============================
+// Todas las llamadas al backend pasan por aquí: arma la URL completa,
+// agrega el token de sesión y, si la respuesta viene con error, la
+// convierte en un mensaje legible para mostrar en un toast.
 async function api(path, options = {}) {
   const esFormData = options.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
@@ -92,6 +144,11 @@ async function api(path, options = {}) {
 }
 
 // ---------- 1B. UTILIDADES DE UI: NOTIFICACIONES Y CONFIRMACIONES ----------
+// ==============================
+// NOTIFICAR (MOSTRAR UNA NOTIFICACIÓN TOAST EN PANTALLA)
+// ==============================
+// Crea la notificación flotante que avisa éxito, error o advertencia,
+// y se borra sola a los pocos segundos.
 function notificar(mensaje, tipo = "info") {
   const cont = document.getElementById("toastContainer");
   if (!cont) return;
@@ -118,6 +175,12 @@ function notificar(mensaje, tipo = "info") {
   setTimeout(quitar, 4500);
 }
 
+// ==============================
+// CONFIRMAR (VENTANA DE SÍ/NO PERSONALIZADA)
+// ==============================
+// Reemplaza el "¿Estás seguro?" feo del navegador por un modal propio;
+// devuelve una promesa que se resuelve en true/false según el botón
+// que toque el usuario.
 function confirmar(mensaje) {
   return new Promise((resolve) => {
     const modal = document.getElementById("modalConfirm");
@@ -140,6 +203,12 @@ function confirmar(mensaje) {
   });
 }
 
+// ==============================
+// MANEJAR ERROR (MOSTRAR CUALQUIER ERROR COMO TOAST)
+// ==============================
+// Punto único donde van a parar los errores de las llamadas a la API:
+// si es un problema de conexión avisa que el backend puede estar
+// apagado; si no, muestra el mensaje que mandó el backend.
 function manejarError(err, prefijo = "") {
   console.error(err);
   notificar(err.message && err.message.includes("fetch")
@@ -148,6 +217,11 @@ function manejarError(err, prefijo = "") {
 }
 
 // ---------- LOGIN ----------
+// ==============================
+// FORM LOGIN SUBMIT (INICIAR SESIÓN)
+// ==============================
+// Envía usuario/contraseña al backend, guarda el token y los datos
+// del operador en el navegador, y entra a la app si todo salió bien.
 document.getElementById("formLogin").addEventListener("submit", async (e) => {
   e.preventDefault();
   const usuario = document.getElementById("loginUsuario").value.trim();
@@ -186,6 +260,12 @@ document.getElementById("btnLogout").addEventListener("click", () => {
   document.getElementById("pantallaLogin").classList.remove("hidden");
 });
 
+// ==============================
+// ENTRAR A APP (ARRANCA LA APP DESPUÉS DE INICIAR SESIÓN)
+// ==============================
+// Oculta la pantalla de login, muestra la app, aplica los permisos
+// según el rol, arma el mapa y carga los datos de todos los módulos
+// por primera vez.
 async function entrarAApp() {
   document.getElementById("pantallaLogin").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
@@ -215,6 +295,12 @@ async function entrarAApp() {
 // RBAC EN EL FRONTEND (solo usabilidad; la seguridad real la hace
 // el backend con requireRole() en cada ruta)
 // -----------------------------------------------------------
+// ==============================
+// APLICAR PERMISOS POR ROL (OCULTA LO QUE NO LE CORRESPONDE VER)
+// ==============================
+// Recorre el menú y las vistas, y esconde las que el rol actual
+// (operador/administrador) no debería ver, según el atributo
+// data-roles de cada una.
 function aplicarPermisosPorRol(rol) {
   document.querySelectorAll(".nav-item[data-roles]").forEach(btn => {
     const rolesPermitidos = btn.dataset.roles.split(",");
@@ -253,11 +339,21 @@ document.querySelectorAll(".nav-item").forEach(btn => {
 });
 
 // ---------- MENÚ MÓVIL ----------
+// ==============================
+// ABRIR SIDEBAR MOBILE (ABRE EL MENÚ LATERAL EN CELULAR)
+// ==============================
+// Muestra el menú deslizante en pantallas angostas.
 function abrirSidebarMobile() {
+  // En pantallas pequeñas (celulares), saca el menú lateral deslizándolo hacia la derecha.
   document.querySelector(".sidebar").classList.add("open");
   document.getElementById("sidebarOverlay").classList.remove("hidden");
 }
+// ==============================
+// CERRAR SIDEBAR MOBILE (CIERRA EL MENÚ LATERAL EN CELULAR)
+// ==============================
+// Oculta de nuevo ese menú deslizante.
 function cerrarSidebarMobile() {
+  // Esconde el menú lateral en pantallas pequeñas.
   document.querySelector(".sidebar").classList.remove("open");
   document.getElementById("sidebarOverlay").classList.add("hidden");
 }
@@ -265,8 +361,15 @@ document.getElementById("btnMenuMobile").addEventListener("click", abrirSidebarM
 document.getElementById("sidebarOverlay").addEventListener("click", cerrarSidebarMobile);
 
 // ---------- MÓDULO: ALERTAS + MAPA (Cassandra) ----------
+// ==============================
+// INIT MAPA (ARMA EL MAPA PRINCIPAL DE ALERTAS)
+// ==============================
+// Crea el mapa Leaflet de la pantalla de Alertas, define qué pasa
+// cuando el operador hace clic para marcar una nueva emergencia, y
+// pinta los marcadores de las sedes.
 function initMapa() {
-  mapa = L.map("mapaAlertas", { zoomControl: true }).setView([-9.5277, -77.5285], 14); // Huaraz, Ancash
+  // Arranca el mapa de Leaflet en la pestaña de Alertas. Le pone el diseño oscuro y las coordenadas de inicio.
+  mapa = L.map("mapaAlertas", { zoomControl: true }).setView([-9.1450, -78.5195], 14); // Nuevo Chimbote, Ancash
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
   }).addTo(mapa);
@@ -290,7 +393,14 @@ function initMapa() {
 // Estos colores nunca cambian (a diferencia de las Alertas, que
 // usan un color por tipo de emergencia) y son distintos entre sí
 // para que la leyenda del módulo tenga sentido.
+// ==============================
+// RENDERIZAR MARCADORES SEDES (PINTA LAS SEDES EN EL MAPA)
+// ==============================
+// Dibuja en el mapa un marcador por cada sede activa, para que el
+// operador vea de un vistazo dónde están los hospitales/comisarías/
+// bomberos.
 function renderizarMarcadoresSedes() {
+  // Toma la lista global de Sedes (hospitales, bomberos) y dibuja un puntito de color en el mapa para cada una.
   if (!mapa) return;
   Object.values(marcadoresSedes).forEach(m => mapa.removeLayer(m));
 
@@ -308,18 +418,27 @@ function renderizarMarcadoresSedes() {
   });
 }
 
+// ==============================
+// FORM ALERTA SUBMIT (REGISTRAR UNA NUEVA EMERGENCIA)
+// ==============================
+// Valida que se haya marcado la ubicación en el mapa y que haya
+// descripción, y manda la alerta nueva al backend.
 document.getElementById("formAlerta").addEventListener("submit", async (e) => {
   e.preventDefault();
   const lat = document.getElementById("alertaLat").value;
   const lng = document.getElementById("alertaLng").value;
+  const descripcion = document.getElementById("alertaDescripcion").value.trim();
   if (!lat || !lng) return notificar("Haz clic en el mapa para marcar la ubicación antes de registrar.", "warning");
+  // PUNTO (agregado): sin descripción, el operador de despacho no
+  // sabría qué está pasando ni el tipo de ayuda a enviar.
+  if (!descripcion) return notificar("Escribe una descripción breve de la emergencia.", "warning");
 
   try {
     await api("/alertas", {
       method: "POST",
       body: JSON.stringify({
         tipo: document.getElementById("alertaTipo").value,
-        descripcion: document.getElementById("alertaDescripcion").value,
+        descripcion,
         latitud: parseFloat(lat),
         longitud: parseFloat(lng),
         direccion_referencial: document.getElementById("alertaDireccion").value
@@ -332,7 +451,13 @@ document.getElementById("formAlerta").addEventListener("submit", async (e) => {
   } catch (err) { manejarError(err, "No se pudo registrar la alerta: "); }
 });
 
+// ==============================
+// CARGAR ALERTAS (TRAE Y PINTA TODAS LAS ALERTAS)
+// ==============================
+// Pide al backend la lista de alertas, actualiza los contadores (KPIs)
+// del dashboard y dibuja en el mapa los pines de las que siguen abiertas.
 async function cargarAlertas() {
+  // Esta función se encarga de pedirle al servidor TODAS las alertas activas y pintarlas tanto en el mapa como en la lista lateral.
   try {
     const alertas = await api("/alertas");
     Object.values(marcadoresAlertas).forEach(m => mapa.removeLayer(m));
@@ -361,6 +486,10 @@ async function cargarAlertas() {
   } catch (err) { console.warn("No se pudieron cargar alertas:", err.message); }
 }
 
+// ==============================
+// ES DEL DIA (¿ESA FECHA CAE HOY O X DÍAS ATRÁS?)
+// ==============================
+// Función chica de ayuda para armar las tendencias de los KPIs.
 function esDelDia(fechaIso, diasAtras) {
   if (!fechaIso) return false;
   const f = new Date(fechaIso);
@@ -369,6 +498,11 @@ function esDelDia(fechaIso, diasAtras) {
   return f.getFullYear() === ref.getFullYear() && f.getMonth() === ref.getMonth() && f.getDate() === ref.getDate();
 }
 
+// ==============================
+// CALCULAR TENDENCIA (COMPARA HOY CONTRA AYER)
+// ==============================
+// Cuenta cuántos registros hay hoy y cuántos había ayer, para mostrar
+// la flechita de "subió" o "bajó" en los KPIs.
 function calcularTendencia(items, campoFecha) {
   const hoy = items.filter(x => esDelDia(x[campoFecha], 0)).length;
   const ayer = items.filter(x => esDelDia(x[campoFecha], 1)).length;
@@ -378,6 +512,10 @@ function calcularTendencia(items, campoFecha) {
   return { hoy, ayer, delta };
 }
 
+// ==============================
+// RENDER TENDENCIA HTML (DIBUJA LA FLECHITA DE TENDENCIA)
+// ==============================
+// Arma el HTML de esa flechita con su color y su texto.
 function renderTendenciaHTML(t, etiqueta) {
   if (t.hoy === 0 && t.ayer === 0) return `<span class="kpi-trend-neutral">Sin actividad hoy</span>`;
   const subiendo = t.delta >= 0;
@@ -387,6 +525,11 @@ function renderTendenciaHTML(t, etiqueta) {
 }
 
 // ---------- MÓDULO: DESPACHO (SPLIT SCREEN) ----------
+// ==============================
+// RENDERIZAR COLA DESPACHO (LISTA DE EMERGENCIAS PENDIENTES DE ATENDER)
+// ==============================
+// Pinta, en el módulo de Despacho, la cola de alertas que todavía no
+// tienen un recurso asignado, para que el operador elija cuál atender.
 function renderizarColaDespacho(alertas) {
   const pendientes = alertas.filter(a => a.estado === "pendiente");
   const enAtencion = alertas.filter(a => a.estado === "en_atencion");
@@ -425,7 +568,14 @@ function renderizarColaDespacho(alertas) {
   });
 }
 
+// ==============================
+// MOSTRAR DETALLE DESPACHO (ABRE EL PANEL PARA ATENDER UNA ALERTA)
+// ==============================
+// Trae los recursos disponibles (ya ordenados por prioridad) y las
+// sedes cercanas para esa emergencia puntual, y arma el panel donde
+// el operador elige a quién mandar.
 async function mostrarDetalleDespacho(idAlerta) {
+  // Cuando el operador hace clic en una tarjeta de la cola, esta función carga sus detalles en el panel derecho para poder asignarle un recurso.
   const alerta = alertasPendientesGlobal.find(a => a.id_alerta === idAlerta);
   if (!alerta) return;
   const panel = document.getElementById("panelDetalleDespacho");
@@ -505,6 +655,11 @@ async function mostrarDetalleDespacho(idAlerta) {
 
 // Marca como seleccionada una tarjeta de recurso o sede dentro del panel
 // de Despacho, y guarda su id en el input oculto correspondiente.
+// ==============================
+// SELECCIONA RDESPACHO (MARCAR QUÉ RECURSO/SEDE SE VA A USAR)
+// ==============================
+// Guarda en memoria qué recurso y qué sede eligió el operador antes
+// de confirmar el despacho.
 function seleccionarDespacho(tipo, id, btnEl) {
   const contenedorId = tipo === "recurso" ? "listaRecursosDespacho" : "listaSedesDespacho";
   document.querySelectorAll(`#${contenedorId} .despacho-opcion`).forEach(b => b.classList.remove("is-selected"));
@@ -512,6 +667,11 @@ function seleccionarDespacho(tipo, id, btnEl) {
   document.getElementById(tipo === "recurso" ? "despachoRecurso" : "despachoSede").value = id;
 }
 
+// ==============================
+// EJECUTARDESPACHO (CONFIRMA EL ENVÍO DEL RECURSO ELEGIDO)
+// ==============================
+// Manda al backend el recurso (y la sede, si se eligió) que va a
+// atender la emergencia, y refresca las listas después.
 async function ejecutarDespacho(idAlerta) {
   const idRecurso = document.getElementById("despachoRecurso").value;
   const idSede = document.getElementById("despachoSede").value;
@@ -528,6 +688,11 @@ async function ejecutarDespacho(idAlerta) {
   } catch (err) { manejarError(err, "No se pudo despachar: "); }
 }
 
+// ==============================
+// CERRARCASO (MARCA LA EMERGENCIA COMO RESUELTA)
+// ==============================
+// Cambia el estado de la alerta a "cerrada", lo que libera el recurso
+// asignado y habilita el caso para subirle evidencias.
 async function cerrarCaso(idAlerta) {
   const ok = await confirmar("Esto cerrará la alerta y liberará el recurso asignado. ¿Continuar?");
   if (!ok) return;
@@ -546,17 +711,29 @@ async function cerrarCaso(idAlerta) {
 // MÓDULO: USUARIOS Y RECURSOS (PostgreSQL) — CRUD completo (admin)
 // =========================================================
 
+// ==============================
+// FORMOPERADOR SUBMIT (CREAR UN OPERADOR NUEVO)
+// ==============================
+// Valida que estén los datos obligatorios y crea el usuario en el
+// backend (se replica automáticamente a las otras bases).
 document.getElementById("formOperador").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const nombre = document.getElementById("opNombre").value.trim();
+  const usuario = document.getElementById("opUsuario").value.trim();
+  const contrasena = document.getElementById("opPassword").value;
+  const rol = document.getElementById("opRol").value;
+
+  // PUNTO (agregado): estos 3 campos son obligatorios para crear un
+  // operador (la contraseña sí es obligatoria AQUÍ porque es la
+  // primera vez que se crea la cuenta; solo es opcional al EDITAR).
+  if (!nombre) return notificar("Escribe el nombre completo del operador.", "warning");
+  if (!usuario) return notificar("Escribe el usuario del operador.", "warning");
+  if (!contrasena) return notificar("Escribe una contraseña para el operador.", "warning");
+
   try {
     await api("/operadores", {
       method: "POST",
-      body: JSON.stringify({
-        nombre: document.getElementById("opNombre").value,
-        usuario: document.getElementById("opUsuario").value,
-        contrasena: document.getElementById("opPassword").value,
-        rol: document.getElementById("opRol").value
-      })
+      body: JSON.stringify({ nombre, usuario, contrasena, rol })
     });
     document.getElementById("formOperador").reset();
     cargarOperadores();
@@ -564,20 +741,29 @@ document.getElementById("formOperador").addEventListener("submit", async (e) => 
   } catch (err) { manejarError(err, "No se pudo crear el operador: "); }
 });
 
+// ==============================
+// CARGAR OPERADORES (TRAE Y PINTA LA TABLA DE OPERADORES)
+// ==============================
+// Pide la lista al backend y arma las filas de la tabla.    
 async function cargarOperadores() {
+  // Trae la lista de todos los operadores desde la base de datos de PostgreSQL y arma la tabla del panel de administración.
   try {
     const ops = await api("/operadores");
     cacheOperadores = ops;
     const tbody = document.querySelector("#tablaOperadores tbody");
     tbody.innerHTML = "";
     ops.forEach(o => {
+      const esUno = o.id_operador === OPERADOR.id; // OPERADOR es el operador logueado (viene del login)
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${o.id_operador}</td><td>${o.nombre}</td><td>${o.usuario}</td><td>${o.rol}</td>
         <td>
           <div class="table-actions">
             <button class="btn-icon btn-icon-edit" aria-label="Editar operador ${o.nombre}" onclick="abrirEditarOperador(${o.id_operador})">✎</button>
-            <button class="btn-icon" aria-label="Eliminar operador ${o.nombre}" onclick="eliminarOperador(${o.id_operador})">✕</button>
+            ${esUno
+              ? `<span class="btn-icon" style="opacity:.4" title="No puedes eliminar tu propio usuario">✕</span>`
+              : `<button class="btn-icon" aria-label="Eliminar operador ${o.nombre}" onclick="eliminarOperador(${o.id_operador})">✕</button>`
+            }
           </div>
         </td>
       `;
@@ -586,6 +772,11 @@ async function cargarOperadores() {
   } catch (err) { console.warn(err.message); }
 }
 
+// ==============================
+// ELIMINAROPERADOR (DAR DE BAJA UN OPERADOR, CON CONFIRMACIÓN)
+// ==============================
+// Pregunta antes de borrar (porque es una baja en cascada en las 4
+// bases) y, si confirman, manda la petición de borrado.
 async function eliminarOperador(id) {
   const ok = await confirmar("Esto desactivará al operador en las 4 bases de datos (cascada). ¿Continuar?");
   if (!ok) return;
@@ -596,6 +787,11 @@ async function eliminarOperador(id) {
   } catch (err) { manejarError(err, "No se pudo eliminar el operador: "); }
 }
 
+// ==============================
+// ABRIREDITAROPERADOR (ABRE EL MODAL PARA EDITAR UN OPERADOR)
+// ==============================
+// Arma el formulario de edición con los datos actuales del operador
+// (la contraseña queda opcional).
 function abrirEditarOperador(id) {
   const o = cacheOperadores.find(x => x.id_operador === id);
   if (!o) return;
@@ -625,15 +821,24 @@ function abrirEditarOperador(id) {
   });
 }
 
+// ==============================
+// FORMRECURSO SUBMIT (CREAR UN RECURSO NUEVO)
+// ==============================
+// Valida la placa y crea el recurso (ambulancia/patrulla/bomberos) en el backend.
 document.getElementById("formRecurso").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const tipo = document.getElementById("recTipo").value;
+  const placa = document.getElementById("recPlaca").value.trim();
+
+  // PUNTO (agregado): la placa es el dato que el usuario tiene que
+  // escribir a mano (el tipo ya viene fijo del select), así que es
+  // el único que puede quedar vacío por error.
+  if (!placa) return notificar("Escribe la placa del recurso.", "warning");
+
   try {
     await api("/recursos", {
       method: "POST",
-      body: JSON.stringify({
-        tipo: document.getElementById("recTipo").value,
-        placa: document.getElementById("recPlaca").value
-      })
+      body: JSON.stringify({ tipo, placa })
     });
     document.getElementById("formRecurso").reset();
     cargarRecursos();
@@ -641,7 +846,12 @@ document.getElementById("formRecurso").addEventListener("submit", async (e) => {
   } catch (err) { manejarError(err, "No se pudo crear el recurso: "); }
 });
 
+// ==============================
+// CARGARRECURSOS (TRAE Y PINTA LA TABLA DE RECURSOS)
+// ==============================
+// Pide la lista al backend y también arma la caché de recursos disponibles para el módulo de Despacho.
 async function cargarRecursos() {
+  // Se trae el inventario completo de recursos (vehículos, unidades) y los mete en la tabla del módulo de Recursos.
   try {
     const recs = await api("/recursos");
     cacheRecursos = recs;
@@ -667,7 +877,12 @@ async function cargarRecursos() {
   } catch (err) { console.warn(err.message); }
 }
 
+// ==============================
+// ELIMINARRECURSO (DAR DE BAJA UN RECURSO, CON CONFIRMACIÓN)
+// ==============================
+// Pregunta antes de desactivar el recurso y luego lo manda a borrar.
 async function eliminarRecurso(id) {
+  // Cuando el admin da clic al tachito de basura de un recurso, pide confirmación y le avisa a la base de datos que lo borre.
   const ok = await confirmar("¿Desactivar este recurso? También se propaga a sus réplicas.");
   if (!ok) return;
   try {
@@ -677,6 +892,10 @@ async function eliminarRecurso(id) {
   } catch (err) { manejarError(err, "No se pudo eliminar el recurso: "); }
 }
 
+// ==============================
+// ABRIREDITARRECURSO (ABRE EL MODAL PARA EDITAR UN RECURSO)
+// ==============================
+// Arma el formulario de edición con los datos actuales del recurso.
 function abrirEditarRecurso(id) {
   const r = cacheRecursos.find(x => x.id_recurso === id);
   if (!r) return;
@@ -712,15 +931,24 @@ function abrirEditarRecurso(id) {
 // MÓDULO: GESTIÓN INSTITUCIONAL (Oracle) — CRUD completo (admin)
 // =========================================================
 
+// ==============================
+// FORMINSTITUCION SUBMIT (CREAR UNA INSTITUCIÓN NUEVA)
+// ==============================
+// Valida nombre y tipo, y crea la institución (Hospital/Comisaría/Bomberos) en el backend.
 document.getElementById("formInstitucion").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const nombre = document.getElementById("instNombre").value.trim();
+  const tipo = document.getElementById("instTipo").value;
+  // PUNTO (agregado): si falta el nombre, no se registra nada y se
+  // avisa con un toast en vez de dejar que el navegador lo bloquee en
+  // silencio o que el backend responda con un error genérico.
+  if (!nombre) return notificar("Escribe el nombre de la institución.", "warning");
+  if (!tipo) return notificar("Selecciona el tipo de institución.", "warning");
+
   try {
     await api("/instituciones", {
       method: "POST",
-      body: JSON.stringify({
-        nombre: document.getElementById("instNombre").value,
-        tipo: document.getElementById("instTipo").value
-      })
+      body: JSON.stringify({ nombre, tipo })
     });
     document.getElementById("formInstitucion").reset();
     cargarInstituciones();
@@ -728,7 +956,12 @@ document.getElementById("formInstitucion").addEventListener("submit", async (e) 
   } catch (err) { manejarError(err, "No se pudo crear la institución: "); }
 });
 
+// ==============================
+// CARGARINSTITUCIONES (TRAE Y PINTA LA TABLA DE INSTITUCIONES)
+// ==============================
+// Pide la lista al backend y la deja también en caché para armar los selects de Sede.
 async function cargarInstituciones() {
+  // Pide a Oracle (o tu BD institucional) las dependencias (como MINSA, PNP) y arma la tabla en pantalla.
   try {
     const instsRaw = await api("/instituciones");
     const insts = instsRaw.map(normalizarClaves);
@@ -765,6 +998,10 @@ async function cargarInstituciones() {
   } catch (err) { console.warn(err.message); }
 }
 
+// ==============================
+// ELIMINARINSTITUCION (DAR DE BAJA UNA INSTITUCIÓN, CON CONFIRMACIÓN)
+// ==============================
+// Avisa que también se dan de baja sus sedes, y si confirman, manda el borrado en cascada.
 async function eliminarInstitucion(id) {
   const ok = await confirmar("Esto desactivará la institución y sus sedes en cascada. ¿Continuar?");
   if (!ok) return;
@@ -776,6 +1013,10 @@ async function eliminarInstitucion(id) {
   } catch (err) { manejarError(err, "No se pudo eliminar la institución: "); }
 }
 
+// ==============================
+// ABRIREDITARINSTITUCION (ABRE EL MODAL PARA EDITAR UNA INSTITUCIÓN)
+// ==============================
+// Arma el formulario de edición con nombre y tipo actuales.
 function abrirEditarInstitucion(id) {
   const i = cacheInstituciones.find(x => x.id_institucion === id);
   if (!i) return;
@@ -807,6 +1048,12 @@ function abrirEditarInstitucion(id) {
 // corresponde: Hospital -> camas, Comisaría -> calabozos,
 // Bomberos -> ninguno (ambos deshabilitados / "ninguno").
 // -----------------------------------------------------------
+// ==============================
+// APLICAR VALIDACION CAPACIDAD SEDE (MUESTRA SOLO EL CAMPO QUE APLICA)
+// ==============================
+// Según el tipo de institución elegida en el formulario de Sede,
+// habilita el campo de "camas" (Hospital) o "calabozos" (Comisaría) y
+// deshabilita el que no aplica.
 function aplicarValidacionCapacidadSede() {
   const select = document.getElementById("sedeInstitucion");
   const campoCamas = document.getElementById("sedeCamas");
@@ -833,6 +1080,11 @@ let mapaGeoPicker = null;
 let marcadorGeoPicker = null;
 let coordsGeoSeleccionadas = null;
 
+// ==============================
+// ABRIR MODAL GEO (ABRE EL MAPA PARA ELEGIR LA UBICACIÓN DE UNA SEDE)
+// ==============================
+// Muestra el mapa donde el operador hace clic para marcar dónde
+// queda la sede que está creando (botón "Agregar" del formulario).
 function abrirModalGeo() {
   document.getElementById("modalGeo").classList.remove("hidden");
   document.getElementById("btnConfirmarGeo").disabled = true;
@@ -842,7 +1094,7 @@ function abrirModalGeo() {
 
   setTimeout(() => {
     if (!mapaGeoPicker) {
-      mapaGeoPicker = L.map("mapaGeoPicker", { zoomControl: true }).setView([-9.5277, -77.5285], 13);
+      mapaGeoPicker = L.map("mapaGeoPicker", { zoomControl: true }).setView([-9.1450, -78.5195], 13);
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
         attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
       }).addTo(mapaGeoPicker);
@@ -862,6 +1114,10 @@ function abrirModalGeo() {
   }, 60);
 }
 
+// ==============================
+// CERRARMODALGEO (CIERRA ESE MAPA DE SELECCIÓN)
+// ==============================
+// Oculta el modal y limpia el mapa para la próxima vez que se abra.
 function cerrarModalGeo() {
   document.getElementById("modalGeo").classList.add("hidden");
 }
@@ -881,6 +1137,11 @@ document.getElementById("btnConfirmarGeo").addEventListener("click", () => {
   cerrarModalGeo();
 });
 
+// ==============================
+// FORMSEDE SUBMIT (CREAR UNA SEDE NUEVA)
+// ==============================
+// Valida que se haya elegido la ubicación en el mapa (obligatoria) y
+// crea la sede en el backend con su dirección y capacidad.
 document.getElementById("formSede").addEventListener("submit", async (e) => {
   e.preventDefault();
   const idInstitucion = document.getElementById("sedeInstitucion").value;
@@ -921,7 +1182,12 @@ document.getElementById("formSede").addEventListener("submit", async (e) => {
   } catch (err) { manejarError(err, "No se pudo crear la sede: "); }
 });
 
+// ==============================
+// CARGARSEDES (TRAE Y PINTA LA TABLA DE SEDES)
+// ==============================
+// Pide la lista al backend y también repinta los marcadores de sedes en el mapa.
 async function cargarSedes() {
+  // Carga todas las sucursales o bases operativas que están amarradas a una institución para dibujarlas y listarlas.
   try {
     const sedesRaw = await api("/sedes");
     const sedes = sedesRaw.map(normalizarClaves);
@@ -953,6 +1219,11 @@ async function cargarSedes() {
 // -----------------------------------------------------------
 // PUNTO 3: Tabla de relaciones (Institución <-> Sede <-> capacidad)
 // -----------------------------------------------------------
+// ==============================
+// RENDERIZAR TABLA RELACION INSTITUCIONAL (RESUMEN INSTITUCIÓN → SEDES)
+// ==============================
+// Arma una tabla que agrupa las sedes bajo su institución dueña, para
+// verlas relacionadas de un vistazo.
 function renderizarTablaRelacionInstitucional() {
   const tbody = document.querySelector("#tablaRelacionInstitucional tbody");
   if (!tbody) return;
@@ -977,6 +1248,10 @@ function renderizarTablaRelacionInstitucional() {
   }).join("");
 }
 
+// ==============================
+// ELIMINARSEDE (DAR DE BAJA UNA SEDE, CON CONFIRMACIÓN)
+// ==============================
+// Pregunta antes de desactivar la sede y luego manda el borrado.
 async function eliminarSede(id) {
   const ok = await confirmar("¿Desactivar esta sede? También se propaga a sus réplicas.");
   if (!ok) return;
@@ -987,6 +1262,11 @@ async function eliminarSede(id) {
   } catch (err) { manejarError(err, "No se pudo eliminar la sede: "); }
 }
 
+// ==============================
+// ABRIREDITARSEDE (ABRE EL MODAL PARA EDITAR UNA SEDE, CON MAPA)
+// ==============================
+// Arma el formulario de edición con los datos actuales de la sede y,
+// al final, un mapa para reseleccionar su ubicación (latitud/longitud).
 function abrirEditarSede(id) {
   const s = cacheSedes.find(x => x.id_sede === id);
   if (!s) return;
@@ -1038,6 +1318,13 @@ let onGuardarActual = null;
 let mapaEditarInstance = null;
 let marcadorEditarInstance = null;
 
+// ==============================
+// ABRIRMODALEDITAR (MOTOR GENÉRICO DEL PANEL DE EDICIÓN)
+// ==============================
+// Lo usan todos los módulos (operadores, recursos, instituciones,
+// sedes): arma el formulario del modal a partir de una lista de
+// campos (texto, select o mapa) y guarda qué función hay que llamar
+// al presionar "Guardar".
 function abrirModalEditar({ titulo, campos, onGuardar, ancho = false }) {
   document.getElementById("modalEditarTitulo").textContent = titulo;
   document.querySelector("#modalEditar .modal-editar").classList.toggle("modal-editar-ancho", ancho);
@@ -1092,6 +1379,12 @@ function abrirModalEditar({ titulo, campos, onGuardar, ancho = false }) {
 // longitud. Como el modal se reutiliza para varias entidades, el
 // mapa se crea desde cero cada vez que se abre (se destruye el
 // anterior si existía) para evitar conflictos de instancia de Leaflet.
+// ==============================
+// INICIALIZARMAPAEDITAR (ARMA EL MAPA DENTRO DEL MODAL DE EDICIÓN)
+// ==============================
+// Crea (o recrea) el mapa Leaflet para el campo tipo "mapa" del modal
+// genérico, y guarda la nueva ubicación elegida en los campos ocultos
+// de latitud/longitud cuando el usuario hace clic.
 function inicializarMapaEditar(campo) {
   if (mapaEditarInstance) {
     mapaEditarInstance.remove();
@@ -1099,7 +1392,7 @@ function inicializarMapaEditar(campo) {
     marcadorEditarInstance = null;
   }
 
-  const centro = (campo.lat && campo.lng) ? [Number(campo.lat), Number(campo.lng)] : [-9.5277, -77.5285];
+  const centro = (campo.lat && campo.lng) ? [Number(campo.lat), Number(campo.lng)] : [-9.1450, -78.5195];
   mapaEditarInstance = L.map(campo.id, { zoomControl: true }).setView(centro, 14);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
@@ -1133,6 +1426,10 @@ function inicializarMapaEditar(campo) {
   setTimeout(() => mapaEditarInstance && mapaEditarInstance.invalidateSize(), 80);
 }
 
+// ==============================
+// CERRAR MODAL EDITAR (CIERRA EL PANEL DE EDICIÓN GENÉRICO)
+// ==============================
+// Oculta el modal y destruye el mapa (si había uno) para la próxima vez.
 function cerrarModalEditar() {
   document.getElementById("modalEditar").classList.add("hidden");
   onGuardarActual = null;
@@ -1143,6 +1440,11 @@ function cerrarModalEditar() {
   }
 }
 
+// ==============================
+// FORM EDITAR SUBMIT (GUARDAR LOS CAMBIOS DEL MODAL GENÉRICO)
+// ==============================
+// Ejecuta la función de guardado que le haya pasado cada módulo
+// (onGuardarActual) y cierra el modal si todo salió bien.
 document.getElementById("formEditar").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!onGuardarActual) return;
@@ -1157,6 +1459,10 @@ document.getElementById("formEditar").addEventListener("submit", async (e) => {
 // =========================================================
 let archivosSeleccionados = [];
 
+// ==============================
+// PREVIEWFILES (MOSTRAR MINIATURAS DE LOS ARCHIVOS ELEGIDOS)
+// ==============================
+// Guarda los archivos que el operador seleccionó para una evidencia y dispara el dibujado de sus miniaturas.
 window.previewFiles = function (input) {
   const container = document.getElementById("previewContainer");
   container.innerHTML = "";
@@ -1164,6 +1470,10 @@ window.previewFiles = function (input) {
   renderPreviews();
 };
 
+// ==============================
+// RENDER PREVIEWS (DIBUJA LAS MINIATURAS DE ARCHIVOS)
+// ==============================
+// Pinta una tarjeta pequeña por cada archivo (foto/video/audio) que se va a subir como evidencia.
 function renderPreviews() {
   const container = document.getElementById("previewContainer");
   container.innerHTML = "";
@@ -1188,11 +1498,20 @@ function renderPreviews() {
   });
 }
 
+// ==============================
+// BORRAR ARCHIVO (QUITAR UN ARCHIVO ANTES DE SUBIRLO)
+// ==============================
+// Saca un archivo de la lista de seleccionados si el operador se arrepiente antes de guardar.
 window.borrarArchivo = function (index) {
   archivosSeleccionados.splice(index, 1);
   renderPreviews();
 };
 
+// ==============================
+// FORM EVIDENCIA SUBMIT (SUBIR LA EVIDENCIA DE UN CASO CERRADO)
+// ==============================
+// Manda el primer archivo junto con la descripción para crear la
+// evidencia, y después sube uno por uno los archivos restantes.
 document.getElementById("formEvidencia").addEventListener("submit", async (e) => {
   e.preventDefault();
   const idAlerta = document.getElementById("evAlerta").value;
@@ -1225,6 +1544,10 @@ document.getElementById("formEvidencia").addEventListener("submit", async (e) =>
   } catch (err) { manejarError(err, "No se pudo guardar la evidencia: "); }
 });
 
+// ==============================
+// CARGAR EVIDENCIAS (LLENA EL SELECT DE ALERTAS CERRADAS)
+// ==============================
+// Trae las alertas ya cerradas para que el operador elija a cuál subirle evidencia.
 async function cargarEvidencias() {
   try {
     const cerradas = await api("/alertas/estado/cerrada");
@@ -1270,7 +1593,12 @@ let filtroHistorialTexto = "";
 let filtroHistorialTipo = "";
 let cacheHistorialCerradas = [];
 
+// ==============================
+// CARGAR HISTORIAL (TRAE Y FILTRA LA LISTA DE CASOS CERRADOS)
+// ==============================
+// Pide las alertas cerradas y arma la tabla del Historial, aplicando los filtros de texto/tipo que haya activos.
 async function cargarHistorial() {
+  // Hace una consulta pesada a Cassandra para traer los casos ya cerrados y mostrarlos en el historial.
   try {
     const cerradas = await api("/alertas/estado/cerrada");
     cacheHistorialCerradas = cerradas;
@@ -1324,6 +1652,10 @@ document.getElementById("historialFiltroTipo").addEventListener("change", (e) =>
 // El Operador puede ver el historial pero no tiene este botón disponible
 // (ni en la lista ni en el modal); aunque intentara llamarlo a mano, el
 // backend igual lo rechaza con 403 porque la ruta usa requireRole("administrador").
+// ==============================
+// ELIMINAR DEL HISTORIAL (BORRAR UNA EMERGENCIA DEL HISTORIAL)
+// ==============================
+// Solo Administrador. Pregunta antes de borrar y, si confirman, manda el borrado definitivo.
 async function eliminarDelHistorial(idAlerta) {
   const ok = await confirmar("Esto elimina la emergencia del Historial 360° de forma permanente (incluida su evidencia). ¿Continuar?");
   if (!ok) return;
@@ -1339,6 +1671,10 @@ async function eliminarDelHistorial(idAlerta) {
 let mapaHistorial = null;
 let marcadorHistorial = null;
 
+// ==============================
+// SWITCH MODAL TAB (CAMBIAR DE PESTAÑA DENTRO DEL MODAL DE HISTORIAL)
+// ==============================
+// Alterna entre la pestaña "Info" y la pestaña "Evidencias" del modal de un caso.
 function switchModalTab(tabId) {
   document.querySelectorAll(".modal-tab").forEach(btn => btn.classList.remove("active"));
   document.querySelectorAll(".modal-tab-content").forEach(content => {
@@ -1356,6 +1692,12 @@ function switchModalTab(tabId) {
   }
 }
 
+// ==============================
+// VER HISTORIAL (ABRE EL MODAL CON TODO SOBRE UN CASO)
+// ==============================
+// Pide al backend el historial 360° completo (alerta + recurso + sede
+// + evidencias) y arma el modal con toda esa información, incluido
+// un mini-mapa mostrando dónde ocurrió.
 async function verHistorial(idAlerta) {
   const modal = document.getElementById("modalHistorial");
   modal.classList.remove("hidden");
@@ -1406,8 +1748,8 @@ async function verHistorial(idAlerta) {
       mapaHistorial = L.map("mapaHistorial", { zoomControl: false, dragging: false }).setView([0, 0], 16);
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(mapaHistorial);
     }
-    const lat = parseFloat(alerta.latitud) || -9.5277;
-    const lng = parseFloat(alerta.longitud) || -77.5285;
+    const lat = parseFloat(alerta.latitud) || -9.1450;
+    const lng = parseFloat(alerta.longitud) || -78.5195;
     mapaHistorial.setView([lat, lng], 16);
     if (marcadorHistorial) mapaHistorial.removeLayer(marcadorHistorial);
     marcadorHistorial = L.circleMarker([lat, lng], { radius: 8, color: "#2ECC71" }).addTo(mapaHistorial);
@@ -1438,6 +1780,10 @@ document.getElementById("modalHistorial").addEventListener("click", (e) => {
 // =========================================================
 // PANEL SUPERVISOR (ahora dentro del rol "operador" + "administrador")
 // =========================================================
+// ==============================
+// CASOS POR TIPO (CUENTA CUÁNTOS CASOS HAY DE CADA TIPO)
+// ==============================
+// Función de ayuda para las estadísticas del Panel Supervisor.
 function casosPorTipo(alertas) {
   const etiquetas = { medica: "Médica", incendio: "Incendio", seguridad: "Seguridad", accidente: "Accidente" };
   return Object.keys(etiquetas).map(tipo => ({
@@ -1445,6 +1791,10 @@ function casosPorTipo(alertas) {
   }));
 }
 
+// ==============================
+// CALCULAR TIEMPO PROMEDIO RESOLUCION (¿CUÁNTO SE TARDA EN CERRAR UN CASO?)
+// ==============================
+// Calcula el tiempo promedio entre que se crea y se cierra una alerta.
 function calcularTiempoPromedioResolucion(alertas) {
   const cerradas = alertas.filter(a => a.estado === "cerrada" && a.fecha_creacion && a.fecha_actualizacion);
   if (cerradas.length === 0) return null;
@@ -1452,6 +1802,10 @@ function calcularTiempoPromedioResolucion(alertas) {
   return totalMs / cerradas.length;
 }
 
+// ==============================
+// FORMATEAR DURACION (MILISEGUNDOS A TEXTO LEGIBLE)
+// ==============================
+// Convierte una duración en milisegundos a algo como "2h 15min".
 function formatearDuracion(ms) {
   const totalMin = Math.max(0, Math.round(ms / 60000));
   if (totalMin < 60) return `${totalMin} min`;
@@ -1460,6 +1814,11 @@ function formatearDuracion(ms) {
   return `${horas}h ${min}min`;
 }
 
+// ==============================
+// CARGAR PANEL SUPERVISOR (ARMA LAS ESTADÍSTICAS GENERALES)
+// ==============================
+// Junta los datos de alertas para mostrar el resumen del Panel
+// Supervisor: casos por tipo, tiempo promedio de resolución, etc.
 async function cargarPanelSupervisor() {
   const elTotal = document.getElementById("supTotal");
   if (!elTotal) return;
@@ -1506,6 +1865,11 @@ async function cargarPanelSupervisor() {
 // dependencias nuevas (Socket.io/SSE quedan como mejora futura,
 // documentada en el README).
 
+// ==============================
+// CON SPINNER (MUESTRA UN SPINNER MIENTRAS CARGA ALGO)
+// ==============================
+// Función de ayuda: pone el botón en estado "cargando" antes de
+// ejecutar una función, y lo vuelve a la normalidad al terminar.
 async function conSpinner(idBoton, fn) {
   const btn = document.getElementById(idBoton);
   if (btn) btn.classList.add("is-loading");
@@ -1516,6 +1880,12 @@ async function conSpinner(idBoton, fn) {
   }
 }
 
+// ==============================
+// REFRESCAR MODULO DE VISTA ACTIVA (ACTUALIZA SOLO LO QUE SE ESTÁ VIENDO)
+// ==============================
+// Vuelve a pedir los datos únicamente del módulo que el operador
+// tiene abierto en pantalla en ese momento (para el botón
+// "Actualizar" y el polling automático).
 function refrescarModuloDeVistaActiva() {
   const vistaActiva = document.querySelector(".nav-item.active:not(.hidden)");
   const view = vistaActiva ? vistaActiva.dataset.view : null;
@@ -1524,6 +1894,10 @@ function refrescarModuloDeVistaActiva() {
   }
 }
 
+// ==============================
+// INICIAR POLLING (REFRESCA LA PANTALLA SOLA CADA CIERTO TIEMPO)
+// ==============================
+// Prende un intervalo que llama a refrescarModuloDeVistaActiva() periódicamente, para simular tiempo real.
 function iniciarPolling() {
   if (pollingHandle) return;
   pollingHandle = setInterval(() => {
@@ -1533,6 +1907,10 @@ function iniciarPolling() {
   }, POLLING_MS);
 }
 
+// ==============================
+// DETENER POLLING (APAGA ESE REFRESCO AUTOMÁTICO)
+// ==============================
+// Se usa al cerrar sesión, para no seguir pidiendo datos de una sesión que ya terminó.
 function detenerPolling() {
   if (pollingHandle) {
     clearInterval(pollingHandle);

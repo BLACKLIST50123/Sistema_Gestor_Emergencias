@@ -1,4 +1,11 @@
 // =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Llena MongoDB con 2 evidencias de ejemplo (ligadas a alertas
+// reales de Cassandra) y con las copias de Instituciones/Operadores/
+// Recursos/Sedes que "nacieron" en las otras bases de datos.
+
+// =========================================================
 // SEED DATA - MongoDB (Evidencias Multimedia + Replicidad)
 // Ejecutar con: mongosh sge_evidencias seed.js
 // =========================================================

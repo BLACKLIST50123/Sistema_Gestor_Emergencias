@@ -1,4 +1,14 @@
 -- =========================================================
+-- QUÉ HACE ESTE ARCHIVO (en simple)
+-- =========================================================
+-- Este archivo crea las tablas de Cassandra, la base de datos dueña
+-- de las Alertas (las emergencias del mapa). Como acá se escribe
+-- mucho y rápido, la misma alerta se guarda en 3 tablas distintas
+-- (una por cada forma de consultarla: por id, por estado y por
+-- operador). También trae las 4 tablas espejo con copias de
+-- Instituciones/Recursos/Operadores/Sedes.
+
+-- =========================================================
 -- CASSANDRA - Módulo: ALERTAS EN TIEMPO REAL
 -- Sistema de Gestión de Emergencias (SGE)
 -- =========================================================

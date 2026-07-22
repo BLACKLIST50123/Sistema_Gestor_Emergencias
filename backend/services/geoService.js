@@ -1,20 +1,13 @@
-/**
- * =========================================================
- * SERVICIO DE GEOLOCALIZACIÓN Y PRIORIDADES DE DESPACHO
- * =========================================================
- *
- * PUNTO 1 de la actualización pedida:
- *  - Fórmula de Haversine para calcular distancia en línea recta
- *    (KM) entre la alerta y cada Sede. Este dato NUNCA se persiste
- *    en ninguna base de datos: se calcula al vuelo en cada request
- *    y se envía solo como información adicional al frontend.
- *  - Reglas de prioridad de RECURSOS (Postgres) según el tipo de
- *    emergencia, para ordenar el módulo de Despacho.
- *  - Reglas de prioridad de SEDES (Oracle) según el tipo de
- *    emergencia: primero la rama afín (misma naturaleza que la
- *    emergencia), ordenada por cercanía, y luego el resto también
- *    por cercanía.
- */
+// =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Este archivo tiene toda la "inteligencia" para decidir qué
+// recurso o qué sede conviene mandar primero cuando llega una
+// emergencia. Calcula distancias entre puntos en el mapa (sin
+// guardar nada en ninguna base de datos, solo lo calcula al
+// momento) y ordena las listas de Recursos y de Sedes según el tipo
+// de emergencia, para que el operador vea primero lo más
+// conveniente en el módulo de Despacho.
 
 // -------------------------------------------------
 // Orden de prioridad de RECURSOS por tipo de emergencia
@@ -40,16 +33,13 @@ const RAMA_AFIN_POR_EMERGENCIA = {
   accidente: "Hospital" // Punto 1: "Accidente: Hospitales más cercanos primero"
 };
 
-/**
- * Ordena una lista de Recursos disponibles según la prioridad de
- * despacho definida para el tipo de emergencia. Los tipos no
- * contemplados en la lista de prioridad (ej. 'otro') quedan al final,
- * en el mismo orden relativo en que llegaron.
- *
- * @param {Array<object>} recursos - filas de Recursos (Postgres)
- * @param {string} tipoEmergencia - 'medica'|'incendio'|'seguridad'|'accidente'
- * @returns {Array<object>} copia ordenada
- */
+// ==============================
+// ORDENAR RECURSOS POR PRIORIDAD (ORDENA AMBULANCIAS/PATRULLAS/BOMBEROS)
+// ==============================
+// Recibe la lista de Recursos disponibles y el tipo de emergencia, y
+// los reordena según la tabla PRIORIDAD_RECURSOS de arriba (por
+// ejemplo, en una emergencia médica primero van las ambulancias). Lo
+// que no está contemplado (tipo 'otro') queda al final.
 function ordenarRecursosPorPrioridad(recursos, tipoEmergencia) {
   const orden = PRIORIDAD_RECURSOS[tipoEmergencia] || [];
   const rango = (tipo) => {
@@ -59,11 +49,14 @@ function ordenarRecursosPorPrioridad(recursos, tipoEmergencia) {
   return [...recursos].sort((a, b) => rango(a.tipo) - rango(b.tipo));
 }
 
-/**
- * Distancia en línea recta (KM) entre dos coordenadas usando la
- * Fórmula de Haversine. No se guarda en ninguna BD: es un dato
- * calculado en memoria, solo para informar al operador.
- */
+// ==============================
+// DISTANCIA HAVERSINE KM (CALCULA LA DISTANCIA ENTRE DOS PUNTOS DEL MAPA)
+// ==============================
+// Recibe dos coordenadas (la de la alerta y la de una sede) y
+// devuelve cuántos kilómetros hay entre ellas en línea recta. Es
+// solo un cálculo matemático en memoria, no se guarda en ninguna
+// base de datos: se usa nada más para mostrarle al operador qué tan
+// lejos está cada sede.
 function distanciaHaversineKm(lat1, lon1, lat2, lon2) {
   if ([lat1, lon1, lat2, lon2].some((v) => v === null || v === undefined || Number.isNaN(Number(v)))) {
     return null;
@@ -79,18 +72,14 @@ function distanciaHaversineKm(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-/**
- * Calcula la distancia Haversine de cada sede a un punto de origen
- * (la alerta) y las ordena: primero las de la rama institucional
- * afín al tipo de emergencia (ordenadas por cercanía), luego el
- * resto de sedes también ordenadas por cercanía.
- *
- * @param {Array<object>} sedes - cada sede debe traer { latitud, longitud, tipo_institucion, ... }
- * @param {string} tipoEmergencia
- * @param {number} latOrigen
- * @param {number} lngOrigen
- * @returns {Array<object>} sedes con distancia_km agregada, ya ordenadas
- */
+// ==============================
+// ORDENAR SEDES POR RAMA Y CERCANIA (ORDENA LAS SEDES A DERIVAR)
+// ==============================
+// Le calcula a cada sede qué tan lejos está de la alerta (usando
+// distanciaHaversineKm) y arma el orden final: primero las sedes de
+// la "rama" que tiene que ver con la emergencia (por ejemplo,
+// hospitales si es médica), ordenadas de la más cercana a la más
+// lejana, y después el resto de sedes, también por cercanía.
 function ordenarSedesPorRamaYCercania(sedes, tipoEmergencia, latOrigen, lngOrigen) {
   const ramaAfin = RAMA_AFIN_POR_EMERGENCIA[tipoEmergencia] || null;
 
@@ -118,11 +107,13 @@ function ordenarSedesPorRamaYCercania(sedes, tipoEmergencia, latOrigen, lngOrige
   return [...afines, ...resto];
 }
 
-/**
- * Determina qué campo de capacidad debe mostrarse para una sede,
- * según el tipo de institución dueña de esa sede.
- * Hospital -> camas | Comisaria -> calabozos | Bomberos -> ninguno
- */
+// ==============================
+// CAPACIDAD VISIBLE (QUÉ DATO DE CAPACIDAD MOSTRAR SEGÚN LA SEDE)
+// ==============================
+// Decide qué etiqueta y qué número mostrar en la tarjeta de cada
+// sede: si es un Hospital muestra "Camas", si es una Comisaría
+// muestra "Calabozos", y si es de Bomberos no muestra ningún número
+// de capacidad (no aplica).
 function capacidadVisible(tipoInstitucion, sede) {
   if (tipoInstitucion === "Hospital") {
     return { etiqueta: "Camas", valor: sede.camas_disponibles ?? 0 };

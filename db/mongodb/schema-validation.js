@@ -1,4 +1,14 @@
 // =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Este archivo crea las colecciones de MongoDB y les pone reglas de
+// validación (qué campos son obligatorios y de qué tipo). Es dueño
+// de "evidencias" (fotos/videos/audios de los casos cerrados), y
+// también guarda las 4 colecciones espejo (repl_instituciones,
+// repl_recursos, repl_operadores, repl_sedes) con copias de lo que
+// vive en las otras 3 bases de datos.
+
+// =========================================================
 // MONGODB - Módulo: EVIDENCIAS MULTIMEDIA
 // Sistema de Gestión de Emergencias (SGE)
 // =========================================================

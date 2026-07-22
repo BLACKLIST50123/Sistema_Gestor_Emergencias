@@ -1,5 +1,25 @@
+// =========================================================
+// QUÉ HACE ESTE ARCHIVO (en simple)
+// =========================================================
+// Este archivo es el "guardia de seguridad" del backend. Antes de
+// que cualquier ruta (alertas, recursos, instituciones, evidencias)
+// haga algo, pasa primero por aquí para comprobar dos cosas:
+// 1) ¿La persona inició sesión? (tiene un token válido)
+// 2) ¿Su rol tiene permiso para hacer justo esa acción?
+// Si cualquiera de las dos falla, la petición se corta acá mismo y
+// nunca llega a tocar ninguna base de datos.
+
 const jwt = require("jsonwebtoken");
 
+// ==============================
+// VERIFICAR TOKEN (¿INICIÓ SESIÓN?)
+// ==============================
+// Revisa que la petición traiga el token que se entrega al hacer
+// login (routes/auth.js) en el header "Authorization: Bearer ...".
+// Si no viene, o si viene pero es inválido/vencido, corta la
+// petición con un error 401. Si es válido, guarda los datos del
+// operador (id, usuario, rol) en req.operador para que las
+// siguientes funciones de la ruta ya sepan quién está pidiendo esto.
 function verificarToken(req, res, next) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
@@ -37,6 +57,13 @@ function verificarToken(req, res, next) {
  * Debe usarse SIEMPRE después de verificarToken, porque depende de
  * req.operador.rol (que verificarToken saca del JWT).
  */
+// ==============================
+// REQUIREROLE (¿SU ROL PUEDE HACER ESTO?)
+// ==============================
+// Se usa como candado extra en cada ruta que lo necesite, pasándole
+// qué roles están permitidos (por ejemplo, solo "administrador"
+// puede borrar cosas). Si el rol del operador logueado no está en
+// esa lista, corta con un error 403 ("no tienes permiso").
 function requireRole(...rolesPermitidos) {
   return (req, res, next) => {
     if (!req.operador || !rolesPermitidos.includes(req.operador.rol)) {

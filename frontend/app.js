@@ -1581,9 +1581,27 @@ async function cargarEvidencias() {
               <a class="archivo-chip" href="${FILES_BASE}${a.ruta_archivo}" target="_blank">${a.tipo === "video" ? "🎬" : "🖼️"} ${a.nombre_archivo}</a>
             `).join("")}
           </div>
+          ${esAdministrador() ? `<button class="btn-mini btn-mini-close" onclick="eliminarEvidencia('${ev.id_evidencia}')">Eliminar</button>` : ""}
         </div>
       `).join("");
   } catch (err) { console.warn(err.message); }
+}
+
+// ==============================
+// ELIMINAR EVIDENCIA (DESACTIVAR UN REGISTRO DE EVIDENCIAS MULTIMEDIA)
+// ==============================
+// Solo Administrador. Pregunta antes de desactivar y, si confirman,
+// pide al backend el soft delete (activo=false en MongoDB). Aunque
+// alguien intente llamarla sin ser Administrador, el backend igual
+// la rechaza con 403 porque la ruta usa requireRole("administrador").
+async function eliminarEvidencia(idEvidencia) {
+  const ok = await confirmar("Esto desactivará este registro de evidencias. ¿Continuar?");
+  if (!ok) return;
+  try {
+    await api(`/evidencias/${idEvidencia}`, { method: "DELETE" });
+    cargarEvidencias();
+    notificar("Evidencia eliminada correctamente.", "success");
+  } catch (err) { manejarError(err, "No se pudo eliminar la evidencia: "); }
 }
 
 // =========================================================

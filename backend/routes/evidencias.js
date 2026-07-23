@@ -198,4 +198,38 @@ router.post("/evidencias/:id/archivos", requireRole("operador", "administrador")
   res.json({ mensaje: "Archivo agregado", archivo: nuevoArchivo });
 });
 
+// -----------------------------------------------------------
+// DELETE de un registro de Evidencias — SOLO Administrador.
+// Evidencias es dueña única de sus datos en MongoDB (no existe
+// repl_evidencias en Postgres/Oracle/Cassandra: ningún otro motor
+// "posee" una copia de una evidencia, solo la referencian por
+// id_alerta/id_operador), así que a diferencia de Operadores,
+// Instituciones o Sedes, dar de baja una evidencia NO dispara
+// sincronizarX() de syncService.js: el soft delete queda contenido
+// enteramente en la colección "evidencias" de MongoDB.
+// -----------------------------------------------------------
+// ==============================
+// DELETE /EVIDENCIAS/:ID (DESACTIVAR UN REGISTRO DE EVIDENCIA)
+// ==============================
+// Solo el Administrador puede usar esto (igual que el borrado del
+// Historial 360°). Es un soft delete: en vez de eliminar el
+// documento físicamente, se marca activo=false y se guarda
+// fecha_baja, para no perder el rastro de auditoría ni dejar
+// rutas de archivo colgando (uploads/) sin registro.
+router.delete("/evidencias/:id", requireRole("administrador"), async (req, res) => {
+  const db = getMongoDb();
+  const r = await db.collection("evidencias").updateOne(
+    { id_evidencia: req.params.id, activo: true },
+    { $set: { activo: false, fecha_baja: new Date() } }
+  );
+  // DELETE físico alternativo:
+  // const r = await db.collection("evidencias").deleteOne({ id_evidencia: req.params.id });
+
+  if (r.matchedCount === 0) {
+    return res.status(404).json({ error: "La evidencia no existe o ya estaba desactivada" });
+  }
+
+  res.json({ mensaje: "Evidencia desactivada correctamente" });
+});
+
 module.exports = router;

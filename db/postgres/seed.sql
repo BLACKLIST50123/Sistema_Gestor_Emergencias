@@ -40,16 +40,16 @@ INSERT INTO Recursos (tipo, placa, estado, id_operador_asignado) VALUES
 -- desde la página web.
 -- -------------------------------------------------------------
 INSERT INTO repl_instituciones (id_institucion, nombre, activo) VALUES
-(1, 'Hospital Regional Ancash', TRUE),
-(2, 'Comisaría Central Huaraz', TRUE),
-(3, 'Compañía de Bomberos N°45', TRUE),
-(4, 'Clínica San Pablo', TRUE);
+(1, 'Hospital Regional Eleazar Guzmán Barrón', TRUE),
+(2, 'Comisaría de Buenos Aires', TRUE),
+(3, 'Compañía de Bomberos Voluntarios B-107', TRUE),
+(4, 'Bonamedic Centro Médico', TRUE);
 
 INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo) VALUES
-(1, 1, 'Av. Luzuriaga 123, Huaraz', 12, 0, TRUE),
-(2, 2, 'Jr. Simón Bolívar 456, Huaraz', 0, 8, TRUE),
-(3, 3, 'Av. Confraternidad Internacional 789, Huaraz', 0, 0, TRUE),
-(4, 4, 'Jr. José Olaya 321, Huaraz', 6, 0, TRUE);
+(1, 1, 'Av. Brasil s/n, Nuevo Chimbote', 12, 0, TRUE),
+(2, 2, 'Av. Pacífico E-45, Urb. Buenos Aires, Nuevo Chimbote', 0, 8, TRUE),
+(3, 3, 'Av. Pacífico s/n, Urb. Buenos Aires, Nuevo Chimbote', 0, 0, TRUE),
+(4, 4, 'Av. Argentina Mz. D3 Lote 49, Urb. José Carlos Mariátegui, Nuevo Chimbote', 6, 0, TRUE);
 
 -- Ejemplo de registro de auditoría
 INSERT INTO Auditoria_Acciones (id_operador, accion, entidad_afectada, id_entidad_afectada, detalle) VALUES

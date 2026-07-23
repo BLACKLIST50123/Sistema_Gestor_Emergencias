@@ -21,6 +21,14 @@ Como ya instalaste docker levantamos las 4 bases de datos con este comando.
 ```bash
 docker compose up -d
 ```
+Espera unos 30 - 90 segundos (Oracle es el más lento en arrancar). 
+Luego ejecuta este comndo para ver su estado cuando veas 
+#########################
+DATABASE IS READY TO USE!
+#########################
+```bash
+docker logs sge_oracle
+```
 ## 3. Espera que cargue bien y luego cargar los esquemas y datos de Cassandra y Mongo
 Espera 30–90 segundos (Oracle es el más lento en arrancar). 
 Luego ejecuta estos comandos espera que cargue uno por uno.
@@ -67,7 +75,8 @@ Cambia el campo "Authenticaction" para que quede seleccionado "No Auth", llena l
 Host: localhost | Port: 27017 | Database: sge_evidencias | Sin autenticación
 Lo mismo que en cassandra 
 
-## 6. Llenar datos en Postgres y Oracle con los archivos de sus carpetas "schema" y "seed"
+## 6. YA SE DEBERIA DE LLENAR SOLO PERO SI NO:
+# Llenar datos en Postgres y Oracle con los archivos de sus carpetas "schema" y "seed"
 Como no se llena automaticamente como cassandra y mongo lo tienes que crear manualmente.
 Click Derecho sobre la bd Postgres o Oracle -> new y dale a New Query Console para los comandos.
 

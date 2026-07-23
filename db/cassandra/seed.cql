@@ -8,7 +8,7 @@
 
 -- =========================================================
 -- SEED DATA - Cassandra (Alertas en Tiempo Real)
--- Coordenadas de ejemplo en Huaraz, Ancash, Perú
+-- Coordenadas reales en Nuevo Chimbote, Ancash, Perú
 -- =========================================================
 -- Los id_alerta usan UUIDs FIJOS (en vez de uuid() aleatorio) para
 -- poder referenciarlos también desde db/mongodb/seed.js (evidencias),
@@ -33,11 +33,11 @@ USE sge_alertas;
 INSERT INTO Alertas (id_alerta, tipo, descripcion, estado, latitud, longitud, direccion_referencial,
                       id_operador_reporta, id_recurso_asignado, id_sede_derivacion,
                       fecha_creacion, fecha_actualizacion)
-VALUES (a1111111-1111-1111-1111-111111111111, 'medica', 'Persona inconsciente en vía pública', 'en_atencion', -9.527900, -77.528900,
-        'Plaza de Armas, Huaraz', 3, 2, 1, '2026-07-15T10:00:00.000+0000', '2026-07-15T10:12:00.000+0000');
+VALUES (a1111111-1111-1111-1111-111111111111, 'medica', 'Persona inconsciente en vía pública', 'en_atencion', -9.115024, -78.519814,
+        'Plaza de Armas de Nuevo Chimbote, Av. Anchoveta 12', 3, 2, 1, '2026-07-15T10:00:00.000+0000', '2026-07-15T10:12:00.000+0000');
 
 INSERT INTO Alertas_Por_Estado (estado, fecha_creacion, id_alerta, tipo, latitud, longitud, descripcion)
-VALUES ('en_atencion', '2026-07-15T10:00:00.000+0000', a1111111-1111-1111-1111-111111111111, 'medica', -9.527900, -77.528900,
+VALUES ('en_atencion', '2026-07-15T10:00:00.000+0000', a1111111-1111-1111-1111-111111111111, 'medica', -9.115024, -78.519814,
         'Persona inconsciente en vía pública');
 
 INSERT INTO Alertas_Por_Operador (id_operador_reporta, fecha_creacion, id_alerta, tipo, estado)
@@ -50,11 +50,11 @@ VALUES (3, '2026-07-15T10:00:00.000+0000', a1111111-1111-1111-1111-111111111111,
 INSERT INTO Alertas (id_alerta, tipo, descripcion, estado, latitud, longitud, direccion_referencial,
                       id_operador_reporta, id_recurso_asignado, id_sede_derivacion,
                       fecha_creacion, fecha_actualizacion)
-VALUES (a2222222-2222-2222-2222-222222222222, 'seguridad', 'Robo en curso reportado por vecinos', 'pendiente', -9.529200, -77.530100,
-        'Jr. Comercio 234, Huaraz', 4, null, null, '2026-07-16T09:30:00.000+0000', '2026-07-16T09:30:00.000+0000');
+VALUES (a2222222-2222-2222-2222-222222222222, 'seguridad', 'Robo en curso reportado por vecinos', 'pendiente', -9.127500, -78.520500,
+        'Av. Pacífico, Urb. Buenos Aires, Nuevo Chimbote', 4, null, null, '2026-07-16T09:30:00.000+0000', '2026-07-16T09:30:00.000+0000');
 
 INSERT INTO Alertas_Por_Estado (estado, fecha_creacion, id_alerta, tipo, latitud, longitud, descripcion)
-VALUES ('pendiente', '2026-07-16T09:30:00.000+0000', a2222222-2222-2222-2222-222222222222, 'seguridad', -9.529200, -77.530100,
+VALUES ('pendiente', '2026-07-16T09:30:00.000+0000', a2222222-2222-2222-2222-222222222222, 'seguridad', -9.127500, -78.520500,
         'Robo en curso reportado por vecinos');
 
 INSERT INTO Alertas_Por_Operador (id_operador_reporta, fecha_creacion, id_alerta, tipo, estado)
@@ -66,11 +66,11 @@ VALUES (4, '2026-07-16T09:30:00.000+0000', a2222222-2222-2222-2222-222222222222,
 INSERT INTO Alertas (id_alerta, tipo, descripcion, estado, latitud, longitud, direccion_referencial,
                       id_operador_reporta, id_recurso_asignado, id_sede_derivacion,
                       fecha_creacion, fecha_actualizacion)
-VALUES (a3333333-3333-3333-3333-333333333333, 'incendio', 'Conato de incendio en vivienda', 'cerrada', -9.524600, -77.532400,
-        'Av. Confraternidad Este 567', 3, null, null, '2026-07-10T18:45:00.000+0000', '2026-07-10T20:05:00.000+0000');
+VALUES (a3333333-3333-3333-3333-333333333333, 'incendio', 'Conato de incendio en vivienda', 'cerrada', -9.123200, -78.519800,
+        'Av. Argentina, Urb. José Carlos Mariátegui, Nuevo Chimbote', 3, null, null, '2026-07-10T18:45:00.000+0000', '2026-07-10T20:05:00.000+0000');
 
 INSERT INTO Alertas_Por_Estado (estado, fecha_creacion, id_alerta, tipo, latitud, longitud, descripcion)
-VALUES ('cerrada', '2026-07-10T18:45:00.000+0000', a3333333-3333-3333-3333-333333333333, 'incendio', -9.524600, -77.532400,
+VALUES ('cerrada', '2026-07-10T18:45:00.000+0000', a3333333-3333-3333-3333-333333333333, 'incendio', -9.123200, -78.519800,
         'Conato de incendio en vivienda');
 
 INSERT INTO Alertas_Por_Operador (id_operador_reporta, fecha_creacion, id_alerta, tipo, estado)
@@ -83,10 +83,10 @@ VALUES (3, '2026-07-10T18:45:00.000+0000', a3333333-3333-3333-3333-333333333333,
 -- tal como quedarían si syncService.js hubiera hecho el espejo
 -- automáticamente al crear cada registro desde la página web.
 -- -------------------------------------------------------------
-INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (1, 'Hospital Regional Ancash', true, '2026-07-01T08:00:00.000+0000');
-INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (2, 'Comisaría Central Huaraz', true, '2026-07-01T08:00:00.000+0000');
-INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (3, 'Compañía de Bomberos N°45', true, '2026-07-01T08:00:00.000+0000');
-INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (4, 'Clínica San Pablo', true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (1, 'Hospital Regional Eleazar Guzmán Barrón', true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (2, 'Comisaría de Buenos Aires', true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (3, 'Compañía de Bomberos Voluntarios B-107', true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_instituciones (id_institucion, nombre, activo, fecha_sincronizacion) VALUES (4, 'Bonamedic Centro Médico', true, '2026-07-01T08:00:00.000+0000');
 
 INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo, fecha_sincronizacion) VALUES (1, 'María Fernández Soto', 'mfernandez', 'administrador', true, '2026-07-01T08:00:00.000+0000');
 INSERT INTO repl_operadores (id_operador, nombre, usuario, rol, activo, fecha_sincronizacion) VALUES (2, 'Carlos Ramírez Quiroz', 'cramirez', 'operador', true, '2026-07-01T08:00:00.000+0000');
@@ -101,10 +101,10 @@ INSERT INTO repl_recursos (id_recurso, nombre, estado, activo, fecha_sincronizac
 INSERT INTO repl_recursos (id_recurso, nombre, estado, activo, fecha_sincronizacion) VALUES (5, 'bomberos - BOM-045', 'disponible', true, '2026-07-01T08:00:00.000+0000');
 INSERT INTO repl_recursos (id_recurso, nombre, estado, activo, fecha_sincronizacion) VALUES (6, 'ambulancia - AMB-103', 'mantenimiento', true, '2026-07-01T08:00:00.000+0000');
 
-INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (1, 1, 'Av. Luzuriaga 123, Huaraz', 12, 0, true, '2026-07-01T08:00:00.000+0000');
-INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (2, 2, 'Jr. Simón Bolívar 456, Huaraz', 0, 8, true, '2026-07-01T08:00:00.000+0000');
-INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (3, 3, 'Av. Confraternidad Internacional 789, Huaraz', 0, 0, true, '2026-07-01T08:00:00.000+0000');
-INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (4, 4, 'Jr. José Olaya 321, Huaraz', 6, 0, true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (1, 1, 'Av. Brasil s/n, Nuevo Chimbote', 12, 0, true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (2, 2, 'Av. Pacífico E-45, Urb. Buenos Aires, Nuevo Chimbote', 0, 8, true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (3, 3, 'Av. Pacífico s/n, Urb. Buenos Aires, Nuevo Chimbote', 0, 0, true, '2026-07-01T08:00:00.000+0000');
+INSERT INTO repl_sedes (id_sede, id_institucion, direccion, camas_disponibles, calabozos_disponibles, activo, fecha_sincronizacion) VALUES (4, 4, 'Av. Argentina Mz. D3 Lote 49, Urb. José Carlos Mariátegui, Nuevo Chimbote', 6, 0, true, '2026-07-01T08:00:00.000+0000');
 
 -- Nota: en la práctica, cada INSERT en "Alertas" debe replicarse también
 -- en "Alertas_Por_Estado" y "Alertas_Por_Operador" desde el backend

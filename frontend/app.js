@@ -32,8 +32,8 @@
 // 10. MÓDULO: PANEL SUPERVISOR (KPIs y métricas globales)
 // 11. REACTIVIDAD Y POLLING (Actualización automática)
 // =========================================================
-// SGE — App frontend
-// Conecta con el backend real en API_BASE 
+// SGE — App frontend   
+// Conecta con el backend real en API_BASE  
 // =========================================================
 
 // NOTA SOBRE ROLES:      eltrabaja con 2 roles:
@@ -369,7 +369,7 @@ document.getElementById("sidebarOverlay").addEventListener("click", cerrarSideba
 // pinta los marcadores de las sedes.
 function initMapa() {
   // Arranca el mapa de Leaflet en la pestaña de Alertas. Le pone el diseño oscuro y las coordenadas de inicio.
-  mapa = L.map("mapaAlertas", { zoomControl: true }).setView([-9.1450, -78.5195], 14); // Nuevo Chimbote, Ancash
+  mapa = L.map("mapaAlertas", { zoomControl: true }).setView([-9.123368, -78.530703], 14); // Nuevo Chimbote, Ancash
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
   }).addTo(mapa);
@@ -639,12 +639,12 @@ async function mostrarDetalleDespacho(idAlerta) {
     <h4 class="despacho-seccion-titulo">Asignación Logística</h4>
     <div style="display:flex;flex-direction:column;gap:15px;">
       <div class="field">
-        <span class="despacho-campo-titulo">1. Asignar Recurso (PostgreSQL) — orden de prioridad para "${alerta.tipo}"</span>
+        <span class="despacho-campo-titulo">1. Asignar Recurso — orden de prioridad para "${alerta.tipo}"</span>
         <input type="hidden" id="despachoRecurso">
         ${listaPrioridadRecursos}
       </div>
       <div class="field">
-        <span class="despacho-campo-titulo">2. Sede de Derivación (Oracle) — por cercanía (Haversine)</span>
+        <span class="despacho-campo-titulo">2. Sede de Derivación — por cercanía (Haversine)</span>
         <input type="hidden" id="despachoSede">
         ${listaSedes}
       </div>
@@ -737,7 +737,7 @@ document.getElementById("formOperador").addEventListener("submit", async (e) => 
     });
     document.getElementById("formOperador").reset();
     cargarOperadores();
-    notificar("Operador creado y replicado en Oracle/Cassandra.", "success");
+    notificar("Operador creado", "success");
   } catch (err) { manejarError(err, "No se pudo crear el operador: "); }
 });
 
@@ -842,7 +842,7 @@ document.getElementById("formRecurso").addEventListener("submit", async (e) => {
     });
     document.getElementById("formRecurso").reset();
     cargarRecursos();
-    notificar("Recurso creado y replicado en Oracle/Cassandra.", "success");
+    notificar("Recurso creado", "success");
   } catch (err) { manejarError(err, "No se pudo crear el recurso: "); }
 });
 
@@ -1094,7 +1094,7 @@ function abrirModalGeo() {
 
   setTimeout(() => {
     if (!mapaGeoPicker) {
-      mapaGeoPicker = L.map("mapaGeoPicker", { zoomControl: true }).setView([-9.1450, -78.5195], 13);
+      mapaGeoPicker = L.map("mapaGeoPicker", { zoomControl: true }).setView([-9.123368, -78.530703], 13);
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
         attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
       }).addTo(mapaGeoPicker);
@@ -1392,7 +1392,7 @@ function inicializarMapaEditar(campo) {
     marcadorEditarInstance = null;
   }
 
-  const centro = (campo.lat && campo.lng) ? [Number(campo.lat), Number(campo.lng)] : [-9.1450, -78.5195];
+  const centro = (campo.lat && campo.lng) ? [Number(campo.lat), Number(campo.lng)] : [-9.123368, -78.530703];
   mapaEditarInstance = L.map(campo.id, { zoomControl: true }).setView(centro, 14);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
@@ -1587,7 +1587,7 @@ async function cargarEvidencias() {
 }
 
 // =========================================================
-// MÓDULO: HISTORIAL 360°
+// MÓDULO: HISTORIAL EMERGENCIAS
 // =========================================================
 let filtroHistorialTexto = "";
 let filtroHistorialTipo = "";
@@ -1631,7 +1631,7 @@ async function cargarHistorial() {
         </div>
         <span class="alerta-desc" style="cursor:pointer;" onclick="verHistorial('${a.id_alerta}')">${a.descripcion}</span>
         <div class="alerta-item-acciones">
-          <button class="btn-mini btn-mini-primary" onclick="verHistorial('${a.id_alerta}')">Ver Historial 360°</button>
+          <button class="btn-mini btn-mini-primary" onclick="verHistorial('${a.id_alerta}')">Ver Historial del caso</button>
           ${esAdministrador() ? `<button class="btn-mini btn-mini-close" onclick="eliminarDelHistorial('${a.id_alerta}')">Eliminar</button>` : ""}
         </div>
       </li>
@@ -1648,7 +1648,7 @@ document.getElementById("historialFiltroTipo").addEventListener("change", (e) =>
   cargarHistorial();
 });
 
-// Elimina una emergencia del Historial 360° — SOLO Administrador.
+// Elimina una emergencia del Historial de emergencias — SOLO Administrador.
 // El Operador puede ver el historial pero no tiene este botón disponible
 // (ni en la lista ni en el modal); aunque intentara llamarlo a mano, el
 // backend igual lo rechaza con 403 porque la ruta usa requireRole("administrador").
@@ -1657,7 +1657,7 @@ document.getElementById("historialFiltroTipo").addEventListener("change", (e) =>
 // ==============================
 // Solo Administrador. Pregunta antes de borrar y, si confirman, manda el borrado definitivo.
 async function eliminarDelHistorial(idAlerta) {
-  const ok = await confirmar("Esto elimina la emergencia del Historial 360° de forma permanente (incluida su evidencia). ¿Continuar?");
+  const ok = await confirmar("Esto elimina la emergencia del Historial de emergencias de forma permanente (incluida su evidencia). ¿Continuar?");
   if (!ok) return;
   try {
     await api(`/alertas/${idAlerta}`, { method: "DELETE" });
@@ -1695,7 +1695,7 @@ function switchModalTab(tabId) {
 // ==============================
 // VER HISTORIAL (ABRE EL MODAL CON TODO SOBRE UN CASO)
 // ==============================
-// Pide al backend el historial 360° completo (alerta + recurso + sede
+// Pide al backend el historial de emergencias completo (alerta + recurso + sede
 // + evidencias) y arma el modal con toda esa información, incluido
 // un mini-mapa mostrando dónde ocurrió.
 async function verHistorial(idAlerta) {
@@ -1729,16 +1729,16 @@ async function verHistorial(idAlerta) {
     if (datosDiv) {
       datosDiv.innerHTML = `
         <div class="modal-seccion">
-          <h4>Alerta (Cassandra)</h4>
+          <h4>Alerta</h4>
           <p><strong>${alerta.tipo || "-"}</strong> — ${alerta.descripcion || "-"}</p>
           <p style="color:var(--text-dim);margin-top:4px">${alerta.direccion_referencial || "Sin referencia"}</p>
         </div>
         <div class="modal-seccion">
-          <h4>Recurso que atendió (PostgreSQL)</h4>
+          <h4>Recurso que atendió</h4>
           ${recurso ? `<p>${recurso.tipo} — Placa ${recurso.placa}</p>` : `<p style="color:var(--text-faint)">No se asignó ningún recurso a esta alerta.</p>`}
         </div>
         <div class="modal-seccion">
-          <h4>Institución / sede de derivación (Oracle)</h4>
+          <h4>Institución / sede de derivación</h4>
           ${institucion ? `<p>${institucion.nombre} ${sede ? `— ${sede.direccion}` : ""}</p>` : `<p style="color:var(--text-faint)">No hubo derivación a ninguna institución.</p>`}
         </div>
       `;
@@ -1748,8 +1748,8 @@ async function verHistorial(idAlerta) {
       mapaHistorial = L.map("mapaHistorial", { zoomControl: false, dragging: false }).setView([0, 0], 16);
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(mapaHistorial);
     }
-    const lat = parseFloat(alerta.latitud) || -9.1450;
-    const lng = parseFloat(alerta.longitud) || -78.5195;
+    const lat = parseFloat(alerta.latitud) || -9.123368;
+    const lng = parseFloat(alerta.longitud) || -78.530703;
     mapaHistorial.setView([lat, lng], 16);
     if (marcadorHistorial) mapaHistorial.removeLayer(marcadorHistorial);
     marcadorHistorial = L.circleMarker([lat, lng], { radius: 8, color: "#2ECC71" }).addTo(mapaHistorial);

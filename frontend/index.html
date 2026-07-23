@@ -50,10 +50,6 @@ texto de cada pantalla; cada sección ya trae su propio comentario
       <button type="submit" class="btn-primary btn-full">Ingresar a consola</button>
       <p class="login-error" id="loginError"></p>
     </form>
-
-    <div class="login-demo">
-      <span class="tag-dot"></span> Demo local — usa cualquier usuario del seed (ej. <code>mfernandez</code>) con la API corriendo en <code>localhost:4000</code>
-    </div>
   </div>
 </section>
 
@@ -420,7 +416,7 @@ texto de cada pantalla; cada sección ya trae su propio comentario
       </div>
     </section>
 
-    <!-- ===== VISTA: HISTORIAL 360° ===== -->
+    <!-- ===== VISTA: HISTORIAL EMERGENCIAS  ===== -->
     <section class="view" id="view-historial" data-roles="operador,administrador">
       <div class="card">
         <div class="card-head-row">
@@ -450,11 +446,11 @@ texto de cada pantalla; cada sección ya trae su propio comentario
   </main>
 </div>
 
-<!-- ===== MODAL: HISTORIAL 360° DE UNA ALERTA ===== -->
+<!-- ===== MODAL: HISTORIAL DE UNA EMERGENCIA ===== -->
 <div id="modalHistorial" class="modal-overlay hidden">
   <div class="modal-card modal-large">
     <div class="modal-head">
-      <h3>Historial 360° del caso <span id="modalAlertaId" style="color:var(--text-faint); font-family:var(--font-mono); font-size:12px; margin-left:10px;"></span></h3>
+      <h3>Historial del caso <span id="modalAlertaId" style="color:var(--text-faint); font-family:var(--font-mono); font-size:12px; margin-left:10px;"></span></h3>
       <div style="display:flex; align-items:center; gap:8px;">
         <button id="btnEliminarHistorialModal" class="btn-mini btn-mini-close hidden" aria-label="Eliminar emergencia del historial">Eliminar emergencia</button>
         <button id="btnCerrarModal" class="btn-icon" aria-label="Cerrar modal de historial" onclick="document.getElementById('modalHistorial').classList.add('hidden')">✕</button>

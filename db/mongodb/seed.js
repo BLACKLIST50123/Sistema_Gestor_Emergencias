@@ -79,10 +79,10 @@ db.evidencias.insertMany([
 // =========================================================
 
 db.repl_instituciones.insertMany([
-  { id_institucion: 1, nombre: "Hospital Regional Ancash", activo: true, fecha_sincronizacion: new Date() },
-  { id_institucion: 2, nombre: "Comisaría Central Huaraz", activo: true, fecha_sincronizacion: new Date() },
-  { id_institucion: 3, nombre: "Compañía de Bomberos N°45", activo: true, fecha_sincronizacion: new Date() },
-  { id_institucion: 4, nombre: "Clínica San Pablo", activo: true, fecha_sincronizacion: new Date() }
+  { id_institucion: 1, nombre: "Hospital Regional Eleazar Guzmán Barrón", activo: true, fecha_sincronizacion: new Date() },
+  { id_institucion: 2, nombre: "Comisaría de Buenos Aires", activo: true, fecha_sincronizacion: new Date() },
+  { id_institucion: 3, nombre: "Compañía de Bomberos Voluntarios B-107", activo: true, fecha_sincronizacion: new Date() },
+  { id_institucion: 4, nombre: "Bonamedic Centro Médico", activo: true, fecha_sincronizacion: new Date() }
 ]);
 
 db.repl_operadores.insertMany([
@@ -103,8 +103,8 @@ db.repl_recursos.insertMany([
 ]);
 
 db.repl_sedes.insertMany([
-  { id_sede: 1, id_institucion: 1, direccion: "Av. Luzuriaga 123, Huaraz", camas_disponibles: 12, calabozos_disponibles: 0, activo: true, fecha_sincronizacion: new Date() },
-  { id_sede: 2, id_institucion: 2, direccion: "Jr. Simón Bolívar 456, Huaraz", camas_disponibles: 0, calabozos_disponibles: 8, activo: true, fecha_sincronizacion: new Date() },
-  { id_sede: 3, id_institucion: 3, direccion: "Av. Confraternidad Internacional 789, Huaraz", camas_disponibles: 0, calabozos_disponibles: 0, activo: true, fecha_sincronizacion: new Date() },
-  { id_sede: 4, id_institucion: 4, direccion: "Jr. José Olaya 321, Huaraz", camas_disponibles: 6, calabozos_disponibles: 0, activo: true, fecha_sincronizacion: new Date() }
+  { id_sede: 1, id_institucion: 1, direccion: "Av. Brasil s/n, Nuevo Chimbote", camas_disponibles: 12, calabozos_disponibles: 0, activo: true, fecha_sincronizacion: new Date() },
+  { id_sede: 2, id_institucion: 2, direccion: "Av. Pacífico E-45, Urb. Buenos Aires, Nuevo Chimbote", camas_disponibles: 0, calabozos_disponibles: 8, activo: true, fecha_sincronizacion: new Date() },
+  { id_sede: 3, id_institucion: 3, direccion: "Av. Pacífico s/n, Urb. Buenos Aires, Nuevo Chimbote", camas_disponibles: 0, calabozos_disponibles: 0, activo: true, fecha_sincronizacion: new Date() },
+  { id_sede: 4, id_institucion: 4, direccion: "Av. Argentina Mz. D3 Lote 49, Urb. José Carlos Mariátegui, Nuevo Chimbote", camas_disponibles: 6, calabozos_disponibles: 0, activo: true, fecha_sincronizacion: new Date() }
 ]);

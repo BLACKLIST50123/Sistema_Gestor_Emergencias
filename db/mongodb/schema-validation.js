@@ -138,7 +138,7 @@ db.createCollection("repl_instituciones", {
     }
   },
   validationLevel: "moderate",
-  validationAction: "error"
+  validationAction: "error" 
 });
 db.repl_instituciones.createIndex({ id_institucion: 1 }, { unique: true });
 db.repl_instituciones.createIndex({ activo: 1 });

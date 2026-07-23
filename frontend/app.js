@@ -101,6 +101,18 @@ function esAdministrador() {
   return OPERADOR && OPERADOR.rol === "administrador";
 }
 
+// ==============================
+// REGEX DE VALIDACIÓN (MISMAS QUE USA EL BACKEND)
+// ==============================
+// Se validan aquí primero para avisarle al usuario al toque con un
+// toast (mejor experiencia), pero el backend las vuelve a chequear
+// por si acaso, porque el frontend siempre se puede evadir.
+const NOMBRE_PERSONA_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü\s]+$/;       // Nombre completo (operador): solo letras y espacios
+const USUARIO_REGEX = /^[A-Za-z0-9_.]+$/;                          // Usuario de login: letras, números, "_" y "."
+const PLACA_REGEX = /^[A-Za-z]{3}-\d{3}$/;                         // Placa: AAA-000
+const NOMBRE_INSTITUCION_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9\s\-]+$/; // Nombre institución: letras, números, espacios y guión
+const DIRECCION_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9.,\-\/\s]+$/;    // Dirección: letras, números, espacios y . , - /
+
 // Oracle devuelve las columnas en MAYÚSCULAS (ID_INSTITUCION, NOMBRE...).
 // Este helper normaliza cualquier fila a minúsculas para no repetir
 // "campo.CAMPO ?? campo.campo" por todos lados.
@@ -727,7 +739,13 @@ document.getElementById("formOperador").addEventListener("submit", async (e) => 
   // operador (la contraseña sí es obligatoria AQUÍ porque es la
   // primera vez que se crea la cuenta; solo es opcional al EDITAR).
   if (!nombre) return notificar("Escribe el nombre completo del operador.", "warning");
+  if (!NOMBRE_PERSONA_REGEX.test(nombre)) {
+    return notificar("El nombre completo solo puede contener letras y espacios.", "warning");
+  }
   if (!usuario) return notificar("Escribe el usuario del operador.", "warning");
+  if (!USUARIO_REGEX.test(usuario)) {
+    return notificar("El usuario solo puede contener letras, números, '_' y '.', sin espacios.", "warning");
+  }
   if (!contrasena) return notificar("Escribe una contraseña para el operador.", "warning");
 
   try {
@@ -807,10 +825,16 @@ function abrirEditarOperador(id) {
       { id: "editPassword", label: "Nueva contraseña (opcional)", tipo: "password", valor: "", requerido: false }
     ],
     onGuardar: async () => {
-      const nombre = document.getElementById("editNombre").value;
-      const usuario = document.getElementById("editUsuario").value;
+      const nombre = document.getElementById("editNombre").value.trim();
+      const usuario = document.getElementById("editUsuario").value.trim();
       const rol = document.getElementById("editRol").value;
       const contrasena = document.getElementById("editPassword").value;
+      if (!NOMBRE_PERSONA_REGEX.test(nombre)) {
+        throw new Error("El nombre completo solo puede contener letras y espacios.");
+      }
+      if (!USUARIO_REGEX.test(usuario)) {
+        throw new Error("El usuario solo puede contener letras, números, '_' y '.', sin espacios.");
+      }
       await api(`/operadores/${id}`, {
         method: "PUT",
         body: JSON.stringify({ nombre, usuario, rol, ...(contrasena ? { contrasena } : {}) })
@@ -834,6 +858,9 @@ document.getElementById("formRecurso").addEventListener("submit", async (e) => {
   // escribir a mano (el tipo ya viene fijo del select), así que es
   // el único que puede quedar vacío por error.
   if (!placa) return notificar("Escribe la placa del recurso.", "warning");
+  if (!PLACA_REGEX.test(placa)) {
+    return notificar("La placa debe tener el formato AAA-000 (3 letras, guión, 3 números). Ej: AMB-101", "warning");
+  }
 
   try {
     await api("/recursos", {
@@ -918,8 +945,11 @@ function abrirEditarRecurso(id) {
     ],
     onGuardar: async () => {
       const tipo = document.getElementById("editTipo").value;
-      const placa = document.getElementById("editPlaca").value;
+      const placa = document.getElementById("editPlaca").value.trim();
       const estado = document.getElementById("editEstado").value;
+      if (!PLACA_REGEX.test(placa)) {
+        throw new Error("La placa debe tener el formato AAA-000 (3 letras, guión, 3 números). Ej: AMB-101");
+      }
       await api(`/recursos/${id}`, { method: "PUT", body: JSON.stringify({ tipo, placa, estado }) });
       cargarRecursos();
       notificar("Recurso actualizado y replicado.", "success");
@@ -943,6 +973,9 @@ document.getElementById("formInstitucion").addEventListener("submit", async (e) 
   // avisa con un toast en vez de dejar que el navegador lo bloquee en
   // silencio o que el backend responda con un error genérico.
   if (!nombre) return notificar("Escribe el nombre de la institución.", "warning");
+  if (!NOMBRE_INSTITUCION_REGEX.test(nombre)) {
+    return notificar("El nombre de la institución solo puede contener letras, números, espacios y guiones.", "warning");
+  }
   if (!tipo) return notificar("Selecciona el tipo de institución.", "warning");
 
   try {
@@ -1031,8 +1064,11 @@ function abrirEditarInstitucion(id) {
       ]}
     ],
     onGuardar: async () => {
-      const nombre = document.getElementById("editInstNombre").value;
+      const nombre = document.getElementById("editInstNombre").value.trim();
       const tipo = document.getElementById("editInstTipo").value;
+      if (!NOMBRE_INSTITUCION_REGEX.test(nombre)) {
+        throw new Error("El nombre de la institución solo puede contener letras, números, espacios y guiones.");
+      }
       await api(`/instituciones/${id}`, { method: "PUT", body: JSON.stringify({ nombre, tipo }) });
       cargarInstituciones();
       notificar("Institución actualizada y replicada.", "success");
@@ -1158,13 +1194,17 @@ document.getElementById("formSede").addEventListener("submit", async (e) => {
   if (!lat || !lng) {
     return notificar('Debes seleccionar la ubicación de la sede en el mapa (botón "Agregar").', "warning");
   }
+  const direccionSede = document.getElementById("sedeDireccion").value.trim();
+  if (!DIRECCION_REGEX.test(direccionSede)) {
+    return notificar('La dirección solo puede contener letras, números, espacios y . , - /  (no admite ¡ ! ¿ ? ")', "warning");
+  }
 
   try {
     await api("/sedes", {
       method: "POST",
       body: JSON.stringify({
         id_institucion: parseInt(idInstitucion, 10),
-        direccion: document.getElementById("sedeDireccion").value,
+        direccion: direccionSede,
         camas_disponibles: campoCamas.disabled ? 0 : parseInt(campoCamas.value || "0", 10),
         calabozos_disponibles: campoCalabozos.disabled ? 0 : parseInt(campoCalabozos.value || "0", 10),
         latitud: lat ? parseFloat(lat) : null,
@@ -1288,7 +1328,10 @@ function abrirEditarSede(id) {
     ],
     onGuardar: async () => {
       const id_institucion = parseInt(document.getElementById("editSedeInstitucion").value, 10);
-      const direccion = document.getElementById("editSedeDireccion").value;
+      const direccion = document.getElementById("editSedeDireccion").value.trim();
+      if (!DIRECCION_REGEX.test(direccion)) {
+        throw new Error('La dirección solo puede contener letras, números, espacios y . , - /  (no admite ¡ ! ¿ ? ")');
+      }
       const camas_disponibles = parseInt(document.getElementById("editSedeCamas").value || "0", 10);
       const calabozos_disponibles = parseInt(document.getElementById("editSedeCalabozos").value || "0", 10);
       const latRaw = document.getElementById("editSedeLat").value;

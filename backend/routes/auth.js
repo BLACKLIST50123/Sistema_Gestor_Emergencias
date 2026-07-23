@@ -12,6 +12,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pgPool = require("../config/postgres");
+const { registrarAuditoria } = require("../services/auditService");
 
 const router = express.Router();
 
@@ -54,10 +55,7 @@ router.post("/login", async (req, res) => {
     );
 
     // Registrar auditoría de login (clave para tu profe: "quién hace cada acción")
-    await pgPool.query(
-      `INSERT INTO Auditoria_Acciones (id_operador, accion, detalle) VALUES ($1, 'LOGIN', 'Inicio de sesión exitoso')`,
-      [operador.id_operador]
-    );
+    await registrarAuditoria(operador.id_operador, "LOGIN", "Operadores", operador.id_operador, "Inicio de sesión exitoso");
 
     res.json({
       token,

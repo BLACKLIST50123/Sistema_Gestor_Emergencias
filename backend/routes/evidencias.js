@@ -15,6 +15,7 @@ const { getMongoDb } = require("../config/mongodb");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
 const pgPool = require("../config/postgres");
 const cassandraClient = require("../config/cassandra");
+const { registrarAuditoria } = require("../services/auditService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -166,6 +167,9 @@ router.post("/evidencias", requireRole("operador", "administrador"), manejarErro
   const db = getMongoDb();
   await db.collection("evidencias").insertOne(doc);
 
+  // Auditoría: queda registro de quién subió esta evidencia.
+  await registrarAuditoria(id_operador, "SUBIR_EVIDENCIA", "Evidencias", doc.id_evidencia, `Evidencia subida para la alerta '${id_alerta}'`);
+
   res.status(201).json(doc);
 });
 
@@ -228,6 +232,9 @@ router.delete("/evidencias/:id", requireRole("administrador"), async (req, res) 
   if (r.matchedCount === 0) {
     return res.status(404).json({ error: "La evidencia no existe o ya estaba desactivada" });
   }
+
+  // Auditoría: queda registro de qué administrador desactivó esta evidencia.
+  await registrarAuditoria(req.operador.id_operador, "ELIMINAR_EVIDENCIA", "Evidencias", req.params.id, "Evidencia desactivada");
 
   res.json({ mensaje: "Evidencia desactivada correctamente" });
 });

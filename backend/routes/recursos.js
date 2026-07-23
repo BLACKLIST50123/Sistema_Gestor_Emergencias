@@ -14,9 +14,23 @@ const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { eliminarOperadorEnCascada } = require("../services/cascadeService");
 const { sincronizarRecurso, sincronizarOperador } = require("../services/syncService");
 const { ordenarRecursosPorPrioridad } = require("../services/geoService");
+const { registrarAuditoria } = require("../services/auditService");
 
 const router = express.Router();
 router.use(verificarToken);
+
+// PUNTO (agregado): expresiones regulares de validación, iguales a
+// las que ya usa el frontend, para que aunque alguien llame a la API
+// directo (sin pasar por el formulario) no pueda meter datos sucios.
+// - NOMBRE_PERSONA_REGEX: nombre completo de un operador -> solo
+//   letras (con tildes/ñ) y espacios, nada de números ni símbolos.
+// - USUARIO_REGEX: usuario de login -> letras, números, "_" y "."
+//   sin espacios (para que no se rompa el login por espacios raros).
+// - PLACA_REGEX: 3 letras + guión + 3 números, como en el seed
+//   (AMB-101, PNP-234, BOM-045).
+const NOMBRE_PERSONA_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü\s]+$/;
+const USUARIO_REGEX = /^[A-Za-z0-9_.]+$/;
+const PLACA_REGEX = /^[A-Za-z]{3}-\d{3}$/;
 
 // ---------- OPERADORES ----------
 
@@ -47,6 +61,12 @@ router.post("/operadores", requireRole("administrador"), async (req, res) => {
   if (!nombre || !usuario || !contrasena) {
     return res.status(400).json({ error: "nombre, usuario y contrasena son requeridos" });
   }
+  if (!NOMBRE_PERSONA_REGEX.test(nombre)) {
+    return res.status(400).json({ error: "El nombre completo solo puede contener letras y espacios" });
+  }
+  if (!USUARIO_REGEX.test(usuario)) {
+    return res.status(400).json({ error: "El usuario solo puede contener letras, números, '_' y '.', sin espacios" });
+  }
   if (rol && !ROLES_VALIDOS.includes(rol)) {
     return res.status(400).json({ error: `rol debe ser uno de: ${ROLES_VALIDOS.join(", ")}` });
   }
@@ -73,6 +93,9 @@ router.post("/operadores", requireRole("administrador"), async (req, res) => {
   // su tabla espejo repl_operadores a Oracle y Cassandra.
   const replicas = await sincronizarOperador(operador);
 
+  // Auditoría: queda registro de quién creó a este operador.
+  await registrarAuditoria(req.operador.id_operador, "CREAR_OPERADOR", "Operadores", operador.id_operador, `Operador '${operador.usuario}' creado con rol '${operador.rol}'`);
+
   res.status(201).json({ ...operador, replicas });
 });
 
@@ -90,6 +113,12 @@ router.put("/operadores/:id", requireRole("administrador"), async (req, res) => 
 
   if (!nombre || !usuario || !rol) {
     return res.status(400).json({ error: "nombre, usuario y rol son requeridos" });
+  }
+  if (!NOMBRE_PERSONA_REGEX.test(nombre)) {
+    return res.status(400).json({ error: "El nombre completo solo puede contener letras y espacios" });
+  }
+  if (!USUARIO_REGEX.test(usuario)) {
+    return res.status(400).json({ error: "El usuario solo puede contener letras, números, '_' y '.', sin espacios" });
   }
   if (!ROLES_VALIDOS.includes(rol)) {
     return res.status(400).json({ error: `rol debe ser uno de: ${ROLES_VALIDOS.join(", ")}` });
@@ -129,6 +158,9 @@ router.put("/operadores/:id", requireRole("administrador"), async (req, res) => 
   // Replicidad: la edición también se propaga a repl_operadores
   const replicas = await sincronizarOperador(operador);
 
+  // Auditoría: queda registro de quién editó a este operador.
+  await registrarAuditoria(req.operador.id_operador, "EDITAR_OPERADOR", "Operadores", operador.id_operador, `Operador '${operador.usuario}' editado (rol '${operador.rol}')`);
+
   res.json({ ...operador, replicas });
 });
 
@@ -148,6 +180,10 @@ router.delete("/operadores/:id", requireRole("administrador"), async (req, res) 
   }
 
   const resultado = await eliminarOperadorEnCascada(idOperador);
+
+  // Auditoría: queda registro de quién dio de baja a este operador.
+  await registrarAuditoria(req.operador.id_operador, "ELIMINAR_OPERADOR", "Operadores", idOperador, "Operador desactivado en cascada");
+
   res.json({
     mensaje: `Operador ${idOperador} desactivado en cascada en las 4 bases de datos`,
     detalle: resultado
@@ -202,6 +238,9 @@ router.post("/recursos", requireRole("administrador"), async (req, res) => {
   if (!tipo || !placa || !placa.trim()) {
     return res.status(400).json({ error: "tipo y placa son requeridos" });
   }
+  if (!PLACA_REGEX.test(placa.trim())) {
+    return res.status(400).json({ error: "La placa debe tener el formato AAA-000 (3 letras, guión, 3 números)" });
+  }
   if (!TIPOS_RECURSO_VALIDOS.includes(tipo)) {
     return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_RECURSO_VALIDOS.join(", ")}` });
   }
@@ -210,7 +249,7 @@ router.post("/recursos", requireRole("administrador"), async (req, res) => {
   try {
     result = await pgPool.query(
       `INSERT INTO Recursos (tipo, placa, estado) VALUES ($1,$2,$3) RETURNING *`,
-      [tipo, placa, estado || "disponible"]
+      [tipo, placa.trim().toUpperCase(), estado || "disponible"]
     );
   } catch (err) {
     // PUNTO (agregado): compara contra lo que ya existe en la BD
@@ -226,6 +265,9 @@ router.post("/recursos", requireRole("administrador"), async (req, res) => {
   // su tabla espejo repl_recursos a Oracle y Cassandra.
   const replicas = await sincronizarRecurso(recurso);
 
+  // Auditoría: queda registro de quién creó este recurso.
+  await registrarAuditoria(req.operador.id_operador, "CREAR_RECURSO", "Recursos", recurso.id_recurso, `Recurso '${recurso.placa}' (${recurso.tipo}) creado`);
+
   res.status(201).json({ ...recurso, replicas });
 });
 
@@ -240,6 +282,9 @@ router.put("/recursos/:id", requireRole("administrador"), async (req, res) => {
   if (!tipo || !placa || !placa.trim()) {
     return res.status(400).json({ error: "tipo y placa son requeridos" });
   }
+  if (!PLACA_REGEX.test(placa.trim())) {
+    return res.status(400).json({ error: "La placa debe tener el formato AAA-000 (3 letras, guión, 3 números)" });
+  }
   if (!TIPOS_RECURSO_VALIDOS.includes(tipo)) {
     return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_RECURSO_VALIDOS.join(", ")}` });
   }
@@ -252,7 +297,7 @@ router.put("/recursos/:id", requireRole("administrador"), async (req, res) => {
     result = await pgPool.query(
       `UPDATE Recursos SET tipo = $1, placa = $2, estado = COALESCE($3, estado)
        WHERE id_recurso = $4 AND activo = TRUE RETURNING *`,
-      [tipo, placa, estado || null, req.params.id]
+      [tipo, placa.trim().toUpperCase(), estado || null, req.params.id]
     );
   } catch (err) {
     if (err.code === "23505") {
@@ -266,6 +311,9 @@ router.put("/recursos/:id", requireRole("administrador"), async (req, res) => {
   }
 
   const replicas = await sincronizarRecurso(recurso);
+
+  // Auditoría: queda registro de quién editó este recurso.
+  await registrarAuditoria(req.operador.id_operador, "EDITAR_RECURSO", "Recursos", recurso.id_recurso, `Recurso '${recurso.placa}' editado (estado '${recurso.estado}')`);
 
   res.json({ ...recurso, replicas });
 });
@@ -312,6 +360,11 @@ router.delete("/recursos/:id", requireRole("administrador"), async (req, res) =>
   // Replicidad: el soft delete también se propaga a las réplicas
   // (reusa la misma función de upsert, pasando activo = false).
   const replicas = recurso ? await sincronizarRecurso(recurso) : null;
+
+  // Auditoría: queda registro de quién dio de baja este recurso.
+  if (recurso) {
+    await registrarAuditoria(req.operador.id_operador, "ELIMINAR_RECURSO", "Recursos", recurso.id_recurso, `Recurso '${recurso.placa}' desactivado`);
+  }
 
   res.json({ mensaje: "Recurso desactivado", replicas });
 });

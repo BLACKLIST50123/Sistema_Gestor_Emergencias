@@ -14,9 +14,24 @@ const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { eliminarInstitucionEnCascada } = require("../services/cascadeService");
 const { sincronizarInstitucion, sincronizarSede } = require("../services/syncService");
 const { ordenarSedesPorRamaYCercania, capacidadVisible } = require("../services/geoService");
+const { registrarAuditoria } = require("../services/auditService");
 
 const router = express.Router();
 router.use(verificarToken);
+
+// PUNTO (agregado): expresiones regulares de validación (mismas del
+// frontend, aplicadas también aquí porque el frontend se puede evadir).
+// - NOMBRE_INSTITUCION_REGEX: a diferencia del nombre de una persona,
+//   el nombre de una institución SÍ puede llevar números y guión
+//   (ej. seed real: "Compañía de Bomberos Voluntarios B-107"), así
+//   que se permiten letras, números, espacios y guión.
+// - DIRECCION_REGEX: letras, números, espacios y los símbolos que ya
+//   se usan en las direcciones reales de la BD (. , - /), como en
+//   "Av. Brasil s/n, Nuevo Chimbote" o "Av. Pacífico E-45, Urb. ...".
+//   Bloquea explícitamente ¡ ! ¿ ? " y cualquier otro símbolo raro,
+//   porque no están en la lista blanca.
+const NOMBRE_INSTITUCION_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9\s\-]+$/;
+const DIRECCION_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9.,\-\/\s]+$/;
 
 // ==============================
 // GET /INSTITUCIONES (LISTAR INSTITUCIONES ACTIVAS)
@@ -48,6 +63,9 @@ router.post("/instituciones", requireRole("administrador"), async (req, res) => 
   if (!nombre || !nombre.trim() || !tipo) {
     return res.status(400).json({ error: "nombre y tipo son requeridos" });
   }
+  if (!NOMBRE_INSTITUCION_REGEX.test(nombre.trim())) {
+    return res.status(400).json({ error: "El nombre de la institución solo puede contener letras, números, espacios y guiones" });
+  }
   if (!TIPOS_INSTITUCION_VALIDOS.includes(tipo)) {
     return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_INSTITUCION_VALIDOS.join(", ")}` });
   }
@@ -66,6 +84,9 @@ router.post("/instituciones", requireRole("administrador"), async (req, res) => 
     // el detalle queda en "replicas" para que el frontend/logs lo vean.
     const replicas = await sincronizarInstitucion({ id_institucion, nombre, activo: true });
 
+    // Auditoría: queda registro de quién creó esta institución.
+    await registrarAuditoria(req.operador.id_operador, "CREAR_INSTITUCION", "Instituciones", id_institucion, `Institución '${nombre}' (${tipo}) creada`);
+
     res.status(201).json({ id_institucion, nombre, tipo, replicas });
   } finally {
     await conn.close();
@@ -81,6 +102,9 @@ router.put("/instituciones/:id", requireRole("administrador"), async (req, res) 
   const idInstitucion = parseInt(req.params.id, 10);
   if (!nombre || !tipo) {
     return res.status(400).json({ error: "nombre y tipo son requeridos" });
+  }
+  if (!NOMBRE_INSTITUCION_REGEX.test(nombre.trim())) {
+    return res.status(400).json({ error: "El nombre de la institución solo puede contener letras, números, espacios y guiones" });
   }
   if (!TIPOS_INSTITUCION_VALIDOS.includes(tipo)) {
     return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_INSTITUCION_VALIDOS.join(", ")}` });
@@ -99,6 +123,9 @@ router.put("/instituciones/:id", requireRole("administrador"), async (req, res) 
     // Replicidad: la edición también se propaga a repl_instituciones
     const replicas = await sincronizarInstitucion({ id_institucion: idInstitucion, nombre, activo: true });
 
+    // Auditoría: queda registro de quién editó esta institución.
+    await registrarAuditoria(req.operador.id_operador, "EDITAR_INSTITUCION", "Instituciones", idInstitucion, `Institución '${nombre}' (${tipo}) editada`);
+
     res.json({ id_institucion: idInstitucion, nombre, tipo, replicas });
   } finally {
     await conn.close();
@@ -111,7 +138,12 @@ router.put("/instituciones/:id", requireRole("administrador"), async (req, res) 
 // Delega todo el trabajo de la baja en cadena (institución + sus
 // sedes + réplicas) a cascadeService.eliminarInstitucionEnCascada.
 router.delete("/instituciones/:id", requireRole("administrador"), async (req, res) => {
-  const resultado = await eliminarInstitucionEnCascada(parseInt(req.params.id, 10));
+  const idInstitucion = parseInt(req.params.id, 10);
+  const resultado = await eliminarInstitucionEnCascada(idInstitucion);
+
+  // Auditoría: queda registro de quién dio de baja esta institución.
+  await registrarAuditoria(req.operador.id_operador, "ELIMINAR_INSTITUCION", "Instituciones", idInstitucion, "Institución desactivada en cascada (junto a sus sedes)");
+
   res.json({ mensaje: "Institución desactivada en cascada", detalle: resultado });
 });
 
@@ -216,6 +248,9 @@ router.post("/sedes", requireRole("administrador"), async (req, res) => {
   if (!id_institucion || !direccion) {
     return res.status(400).json({ error: "id_institucion y direccion son requeridos" });
   }
+  if (!DIRECCION_REGEX.test(direccion.trim())) {
+    return res.status(400).json({ error: 'La dirección solo puede contener letras, números, espacios y . , - /  (no admite ¡ ! ¿ ? ")' });
+  }
   if (
     latitud === undefined || latitud === null || latitud === "" ||
     longitud === undefined || longitud === null || longitud === "" ||
@@ -250,6 +285,9 @@ router.post("/sedes", requireRole("administrador"), async (req, res) => {
       activo: true
     });
 
+    // Auditoría: queda registro de quién creó esta sede.
+    await registrarAuditoria(req.operador.id_operador, "CREAR_SEDE", "Sedes", id_sede, `Sede '${direccion}' creada`);
+
     res.status(201).json({ id_sede, replicas });
   } finally {
     await conn.close();
@@ -265,6 +303,9 @@ router.put("/sedes/:id", requireRole("administrador"), async (req, res) => {
   const idSede = parseInt(req.params.id, 10);
   if (!id_institucion || !direccion) {
     return res.status(400).json({ error: "id_institucion y direccion son requeridos" });
+  }
+  if (!DIRECCION_REGEX.test(direccion.trim())) {
+    return res.status(400).json({ error: 'La dirección solo puede contener letras, números, espacios y . , - /  (no admite ¡ ! ¿ ? ")' });
   }
   const conn = await getOracleConnection();
   try {
@@ -294,6 +335,9 @@ router.put("/sedes/:id", requireRole("administrador"), async (req, res) => {
       calabozos_disponibles: calabozos_disponibles || 0,
       activo: true
     });
+
+    // Auditoría: queda registro de quién editó esta sede.
+    await registrarAuditoria(req.operador.id_operador, "EDITAR_SEDE", "Sedes", idSede, `Sede '${direccion}' editada`);
 
     res.json({ id_sede: idSede, replicas });
   } finally {
@@ -334,6 +378,9 @@ router.delete("/sedes/:id", requireRole("administrador"), async (req, res) => {
       calabozos_disponibles: sede.CALABOZOS_DISPONIBLES,
       activo: false
     });
+
+    // Auditoría: queda registro de quién dio de baja esta sede.
+    await registrarAuditoria(req.operador.id_operador, "ELIMINAR_SEDE", "Sedes", idSede, `Sede '${sede.DIRECCION}' desactivada`);
 
     res.json({ mensaje: "Sede desactivada", replicas });
   } finally {

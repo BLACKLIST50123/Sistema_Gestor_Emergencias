@@ -15,6 +15,7 @@ const pgPool = require("../config/postgres");
 const { verificarToken, requireRole } = require("../services/authMiddleware");
 const { sincronizarRecurso } = require("../services/syncService");
 const { eliminarAlertaEnCascada } = require("../services/cascadeService");
+const { registrarAuditoria } = require("../services/auditService");
 
 const router = express.Router();
 router.use(verificarToken);
@@ -105,6 +106,9 @@ router.post("/alertas", requireRole("operador", "administrador"), async (req, re
   ];
 
   await cassandraClient.batch(batch, { prepare: true });
+
+  // Auditoría: queda registro de quién reportó esta emergencia.
+  await registrarAuditoria(id_operador_reporta, "CREAR_ALERTA", "Alertas", id_alerta, `Alerta de tipo '${tipo}' creada`);
 
   res.status(201).json({
     id_alerta, tipo, descripcion, estado: "pendiente",
@@ -242,6 +246,10 @@ router.put("/alertas/:id/estado", requireRole("operador", "administrador"), asyn
     }
   }
 
+  // Auditoría: queda registro de quién cambió el estado (y si cerró el caso).
+  const accionAuditoria = estado === "cerrada" ? "CERRAR_CASO" : "CAMBIAR_ESTADO_ALERTA";
+  await registrarAuditoria(req.operador.id_operador, accionAuditoria, "Alertas", id_alerta, `Estado cambiado de '${estadoAnterior}' a '${estado}'`);
+
   res.json({
     mensaje: "Estado actualizado y replicado en Cassandra",
     id_alerta,
@@ -338,10 +346,15 @@ router.get("/historial/:id_alerta", async (req, res) => {
 // pesado (borrar de las 3 tablas de Cassandra y desactivar sus
 // evidencias en Mongo) a cascadeService.eliminarAlertaEnCascada.
 router.delete("/alertas/:id", requireRole("administrador"), async (req, res) => {
-  const resultado = await eliminarAlertaEnCascada(req.params.id);
+  const idAlerta = req.params.id;
+  const resultado = await eliminarAlertaEnCascada(idAlerta);
   if (resultado.errores.length && !resultado.cassandra) {
     return res.status(404).json({ error: "No se pudo eliminar la alerta", detalle: resultado });
   }
+
+  // Auditoría: queda registro de quién eliminó esta emergencia del historial.
+  await registrarAuditoria(req.operador.id_operador, "ELIMINAR_ALERTA", "Alertas", idAlerta, "Emergencia eliminada del historial (y sus evidencias desactivadas)");
+
   res.json({ mensaje: "Emergencia eliminada del historial", detalle: resultado });
 });
 

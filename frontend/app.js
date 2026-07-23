@@ -270,6 +270,9 @@ document.getElementById("btnLogout").addEventListener("click", () => {
   OPERADOR = null;
   document.getElementById("app").classList.add("hidden");
   document.getElementById("pantallaLogin").classList.remove("hidden");
+  // Al logearse se limian los campos
+  document.getElementById("formLogin").reset();
+  document.getElementById("loginError").textContent = "";
 });
 
 // ==============================
@@ -651,12 +654,12 @@ async function mostrarDetalleDespacho(idAlerta) {
     <h4 class="despacho-seccion-titulo">Asignación Logística</h4>
     <div style="display:flex;flex-direction:column;gap:15px;">
       <div class="field">
-        <span class="despacho-campo-titulo">1. Asignar Recurso — orden de prioridad para "${alerta.tipo}"</span>
+        <span class="despacho-campo-titulo">1. Asignar recurso para "${alerta.tipo}"</span>
         <input type="hidden" id="despachoRecurso">
         ${listaPrioridadRecursos}
       </div>
       <div class="field">
-        <span class="despacho-campo-titulo">2. Sede de Derivación — por cercanía (Haversine)</span>
+        <span class="despacho-campo-titulo">2. Sedes de derivación cercanas</span>
         <input type="hidden" id="despachoSede">
         ${listaSedes}
       </div>
@@ -796,7 +799,7 @@ async function cargarOperadores() {
 // Pregunta antes de borrar (porque es una baja en cascada en las 4
 // bases) y, si confirman, manda la petición de borrado.
 async function eliminarOperador(id) {
-  const ok = await confirmar("Esto desactivará al operador en las 4 bases de datos (cascada). ¿Continuar?");
+  const ok = await confirmar("¿Desea eliminar a este usuario? ¿Continuar?");
   if (!ok) return;
   try {
     await api(`/operadores/${id}`, { method: "DELETE" });

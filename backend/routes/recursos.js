@@ -35,12 +35,22 @@ const PLACA_REGEX = /^[A-Za-z]{3}-\d{3}$/;
 // ---------- OPERADORES ----------
 
 // ==============================
-// GET /OPERADORES (LISTAR OPERADORES ACTIVOS)
+// GET /OPERADORES (LISTAR OPERADORES, ACTIVOS O TODOS)
 // ==============================
+// PUNTO (agregado): por defecto sigue devolviendo solo los activos
+// (para no romper nada que ya dependa de esta ruta), pero si se pide
+// con ?incluirInactivos=true trae también los desactivados, con los
+// activos siempre primero (activo DESC) para que la tabla del panel
+// de administración los pueda pintar en blanco arriba / gris abajo.
 router.get("/operadores", async (req, res) => {
-  const result = await pgPool.query(
-    `SELECT id_operador, nombre, usuario, rol, activo, fecha_creacion FROM Operadores WHERE activo = TRUE ORDER BY id_operador`
-  );
+  const incluirInactivos = req.query.incluirInactivos === "true" || req.query.incluirInactivos === "1";
+  const result = incluirInactivos
+    ? await pgPool.query(
+        `SELECT id_operador, nombre, usuario, rol, activo, fecha_creacion FROM Operadores ORDER BY activo DESC, id_operador`
+      )
+    : await pgPool.query(
+        `SELECT id_operador, nombre, usuario, rol, activo, fecha_creacion FROM Operadores WHERE activo = TRUE ORDER BY id_operador`
+      );
   res.json(result.rows);
 });
 
@@ -190,15 +200,42 @@ router.delete("/operadores/:id", requireRole("administrador"), async (req, res) 
   });
 });
 
+// ==============================
+// PUT /OPERADORES/:ID/ACTIVAR (REACTIVAR UN OPERADOR DESACTIVADO)
+// ==============================
+// Solo Administrador. Vuelve a poner activo = TRUE (sin tocar nombre,
+// usuario, rol ni contraseña) y propaga el cambio a las réplicas.
+router.put("/operadores/:id/activar", requireRole("administrador"), async (req, res) => {
+  const idOperador = parseInt(req.params.id, 10);
+  const result = await pgPool.query(
+    `UPDATE Operadores SET activo = TRUE WHERE id_operador = $1 RETURNING id_operador, nombre, usuario, rol, activo`,
+    [idOperador]
+  );
+  const operador = result.rows[0];
+  if (!operador) {
+    return res.status(404).json({ error: "Operador no encontrado" });
+  }
+
+  const replicas = await sincronizarOperador(operador);
+
+  await registrarAuditoria(req.operador.id_operador, "ACTIVAR_OPERADOR", "Operadores", operador.id_operador, `Operador '${operador.usuario}' reactivado`);
+
+  res.json({ ...operador, replicas });
+});
+
 // ---------- RECURSOS ----------
 
 // ==============================
-// GET /RECURSOS (LISTAR RECURSOS ACTIVOS)
+// GET /RECURSOS (LISTAR RECURSOS, ACTIVOS O TODOS)
 // ==============================
+// PUNTO (agregado): mismo criterio que en /operadores: por defecto
+// solo activos, y con ?incluirInactivos=true trae también los dados
+// de baja, con los activos siempre primero.
 router.get("/recursos", async (req, res) => {
-  const result = await pgPool.query(
-    `SELECT * FROM Recursos WHERE activo = TRUE ORDER BY id_recurso`
-  );
+  const incluirInactivos = req.query.incluirInactivos === "true" || req.query.incluirInactivos === "1";
+  const result = incluirInactivos
+    ? await pgPool.query(`SELECT * FROM Recursos ORDER BY activo DESC, id_recurso`)
+    : await pgPool.query(`SELECT * FROM Recursos WHERE activo = TRUE ORDER BY id_recurso`);
   res.json(result.rows);
 });
 
@@ -367,6 +404,29 @@ router.delete("/recursos/:id", requireRole("administrador"), async (req, res) =>
   }
 
   res.json({ mensaje: "Recurso desactivado", replicas });
+});
+
+// ==============================
+// PUT /RECURSOS/:ID/ACTIVAR (REACTIVAR UN RECURSO DADO DE BAJA)
+// ==============================
+// Solo Administrador. Vuelve a poner activo = TRUE y, como pidió el
+// negocio, el recurso reaparece con estado 'disponible' (ya no tiene
+// sentido que vuelva "ocupado" u otro estado viejo de antes de la baja).
+router.put("/recursos/:id/activar", requireRole("administrador"), async (req, res) => {
+  const result = await pgPool.query(
+    `UPDATE Recursos SET activo = TRUE, estado = 'disponible' WHERE id_recurso = $1 RETURNING *`,
+    [req.params.id]
+  );
+  const recurso = result.rows[0];
+  if (!recurso) {
+    return res.status(404).json({ error: "Recurso no encontrado" });
+  }
+
+  const replicas = await sincronizarRecurso(recurso);
+
+  await registrarAuditoria(req.operador.id_operador, "ACTIVAR_RECURSO", "Recursos", recurso.id_recurso, `Recurso '${recurso.placa}' reactivado`);
+
+  res.json({ ...recurso, replicas });
 });
 
 module.exports = router;

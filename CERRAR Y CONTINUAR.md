@@ -12,9 +12,8 @@ Abrir y Continuar al Día Siguiente
 4. Levantar la página Web Frontend
 
 
-LEVANTA LA TERMINAL UBICADA EN LA CARPETA DEL PROYECTO PARA EMPEZAR CON LOS COMANDOS DE ARRANQUE
 ## 1. Cerrar Backend y Frontend.
-Abre sus consolas y dales "ctrl + c" para detenerlas.
+Selecciona tu consola de Backend y dale "ctrl + c", lo mismo con del frontend para detenerlas.
 
 ## 2. Detener los contenedores de docker sin eliminar la info
 ```bash

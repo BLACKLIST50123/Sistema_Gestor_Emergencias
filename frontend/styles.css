@@ -2159,3 +2159,21 @@ button, input, select, textarea {
 @media (max-width: 480px) {
   .supervisor-kpis { grid-template-columns: 1fr; }
 }
+/* =========================================================
+   PUNTO (agregado): Filas inactivas (desactivadas) en las
+   tablas de Operadores, Recursos, Instituciones y Sedes.
+   Se pintan en gris y quedan siempre al final (ya vienen
+   ordenadas así desde el backend: activo DESC).
+   ========================================================= */
+.fila-inactiva { color: var(--text-faint); opacity: 0.55; }
+.fila-inactiva td { color: var(--text-faint); }
+.fila-inactiva:hover { opacity: 0.8; }
+
+/* Tag de estado "De Baja" para Recursos inactivos (gris, igual
+   familia visual que los demás .estado-tag). */
+.estado-baja { background: #8493A633; color: #8493A6; border: 1px solid #8493A655; }
+
+/* Botón de check verde para reactivar un registro (Operador,
+   Recurso, Institución o Sede desactivado). */
+.btn-icon-activar { color: #4AE58B; border-color: #2ECC7155; }
+.btn-icon-activar:hover { color: #4AE58B; border-color: #2ECC71; }

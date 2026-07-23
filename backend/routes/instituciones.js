@@ -34,14 +34,20 @@ const NOMBRE_INSTITUCION_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9\s\-]+$
 const DIRECCION_REGEX = /^[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9.,\-\/\s]+$/;
 
 // ==============================
-// GET /INSTITUCIONES (LISTAR INSTITUCIONES ACTIVAS)
+// GET /INSTITUCIONES (LISTAR INSTITUCIONES, ACTIVAS O TODAS)
 // ==============================
+// PUNTO (agregado): por defecto solo activas (no rompe nada que ya
+// dependa de esta ruta); con ?incluirInactivos=true trae también las
+// desactivadas, con las activas siempre primero (activo DESC) para
+// que la tabla del panel de administración las pinte en blanco
+// arriba / gris abajo.
 router.get("/instituciones", async (req, res) => {
+  const incluirInactivos = req.query.incluirInactivos === "true" || req.query.incluirInactivos === "1";
   const conn = await getOracleConnection();
   try {
-    const result = await conn.execute(
-      `SELECT * FROM Instituciones WHERE activo = TRUE ORDER BY id_institucion`
-    );
+    const result = incluirInactivos
+      ? await conn.execute(`SELECT * FROM Instituciones ORDER BY activo DESC, id_institucion`)
+      : await conn.execute(`SELECT * FROM Instituciones WHERE activo = TRUE ORDER BY id_institucion`);
     res.json(result.rows);
   } finally {
     await conn.close();
@@ -147,24 +153,69 @@ router.delete("/instituciones/:id", requireRole("administrador"), async (req, re
   res.json({ mensaje: "Institución desactivada en cascada", detalle: resultado });
 });
 
-// ---------- SEDES / CAPACIDAD ----------
-
 // ==============================
-// GET /SEDES (LISTAR TODAS LAS SEDES ACTIVAS)
+// PUT /INSTITUCIONES/:ID/ACTIVAR (REACTIVAR UNA INSTITUCIÓN)
 // ==============================
-// Trae cada sede junto con el nombre y tipo de su institución dueña
-// (con un JOIN), para no tener que hacer una consulta aparte por
-// cada sede en el frontend.
-router.get("/sedes", async (req, res) => {
+// Solo Administrador. Vuelve a poner activo = TRUE (sin tocar nombre
+// ni tipo) y propaga el cambio a las réplicas.
+router.put("/instituciones/:id/activar", requireRole("administrador"), async (req, res) => {
+  const idInstitucion = parseInt(req.params.id, 10);
   const conn = await getOracleConnection();
   try {
     const result = await conn.execute(
-      `SELECT s.*, i.nombre AS nombre_institucion, i.tipo AS tipo_institucion
-       FROM Sedes_Capacidad s
-       JOIN Instituciones i ON i.id_institucion = s.id_institucion
-       WHERE s.activo = TRUE
-       ORDER BY s.id_sede`
+      `UPDATE Instituciones SET activo = TRUE WHERE id_institucion = :id`,
+      { id: idInstitucion },
+      { autoCommit: true }
     );
+    if (result.rowsAffected === 0) {
+      return res.status(404).json({ error: "Institución no encontrada" });
+    }
+
+    const actual = await conn.execute(
+      `SELECT nombre, tipo FROM Instituciones WHERE id_institucion = :id`,
+      [idInstitucion]
+    );
+    const nombre = actual.rows[0]?.NOMBRE;
+    const tipo = actual.rows[0]?.TIPO;
+
+    const replicas = await sincronizarInstitucion({ id_institucion: idInstitucion, nombre, activo: true });
+
+    await registrarAuditoria(req.operador.id_operador, "ACTIVAR_INSTITUCION", "Instituciones", idInstitucion, `Institución '${nombre}' reactivada`);
+
+    res.json({ id_institucion: idInstitucion, nombre, tipo, activo: true, replicas });
+  } finally {
+    await conn.close();
+  }
+});
+
+// ---------- SEDES / CAPACIDAD ----------
+
+// ==============================
+// GET /SEDES (LISTAR SEDES, ACTIVAS O TODAS)
+// ==============================
+// Trae cada sede junto con el nombre y tipo de su institución dueña
+// (con un JOIN), para no tener que hacer una consulta aparte por
+// cada sede en el frontend. Por defecto solo activas; con
+// ?incluirInactivos=true trae también las dadas de baja, siempre con
+// las activas primero.
+router.get("/sedes", async (req, res) => {
+  const incluirInactivos = req.query.incluirInactivos === "true" || req.query.incluirInactivos === "1";
+  const conn = await getOracleConnection();
+  try {
+    const result = incluirInactivos
+      ? await conn.execute(
+          `SELECT s.*, i.nombre AS nombre_institucion, i.tipo AS tipo_institucion
+           FROM Sedes_Capacidad s
+           JOIN Instituciones i ON i.id_institucion = s.id_institucion
+           ORDER BY s.activo DESC, s.id_sede`
+        )
+      : await conn.execute(
+          `SELECT s.*, i.nombre AS nombre_institucion, i.tipo AS tipo_institucion
+           FROM Sedes_Capacidad s
+           JOIN Instituciones i ON i.id_institucion = s.id_institucion
+           WHERE s.activo = TRUE
+           ORDER BY s.id_sede`
+        );
     res.json(result.rows);
   } finally {
     await conn.close();
@@ -383,6 +434,48 @@ router.delete("/sedes/:id", requireRole("administrador"), async (req, res) => {
     await registrarAuditoria(req.operador.id_operador, "ELIMINAR_SEDE", "Sedes", idSede, `Sede '${sede.DIRECCION}' desactivada`);
 
     res.json({ mensaje: "Sede desactivada", replicas });
+  } finally {
+    await conn.close();
+  }
+});
+
+// ==============================
+// PUT /SEDES/:ID/ACTIVAR (REACTIVAR UNA SEDE DADA DE BAJA)
+// ==============================
+// Solo Administrador. Vuelve a poner activo = TRUE (sin tocar el
+// resto de sus datos) y propaga el cambio a las réplicas.
+router.put("/sedes/:id/activar", requireRole("administrador"), async (req, res) => {
+  const idSede = parseInt(req.params.id, 10);
+  const conn = await getOracleConnection();
+  try {
+    const result = await conn.execute(
+      `UPDATE Sedes_Capacidad SET activo = TRUE WHERE id_sede = :id`,
+      [idSede],
+      { autoCommit: true }
+    );
+    if (result.rowsAffected === 0) {
+      return res.status(404).json({ error: "Sede no encontrada" });
+    }
+
+    const actual = await conn.execute(
+      `SELECT id_institucion, direccion, camas_disponibles, calabozos_disponibles
+       FROM Sedes_Capacidad WHERE id_sede = :id`,
+      [idSede]
+    );
+    const sede = actual.rows[0];
+
+    const replicas = await sincronizarSede({
+      id_sede: idSede,
+      id_institucion: sede.ID_INSTITUCION,
+      direccion: sede.DIRECCION,
+      camas_disponibles: sede.CAMAS_DISPONIBLES,
+      calabozos_disponibles: sede.CALABOZOS_DISPONIBLES,
+      activo: true
+    });
+
+    await registrarAuditoria(req.operador.id_operador, "ACTIVAR_SEDE", "Sedes", idSede, `Sede '${sede.DIRECCION}' reactivada`);
+
+    res.json({ mensaje: "Sede reactivada", replicas });
   } finally {
     await conn.close();
   }

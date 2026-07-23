@@ -419,7 +419,9 @@ function renderizarMarcadoresSedes() {
   if (!mapa) return;
   Object.values(marcadoresSedes).forEach(m => mapa.removeLayer(m));
 
-  cacheSedes.forEach(s => {
+  // Las sedes desactivadas no deben aparecer como pin en el mapa
+  // (ya no son un destino real de derivación).
+  cacheSedes.filter(s => s.activo).forEach(s => {
     if (s.latitud == null || s.longitud == null) return;
     const color = COLOR_SEDE_POR_TIPO[s.tipo_institucion] || "#8493A6";
     const marker = L.circleMarker([s.latitud, s.longitud], {
@@ -443,10 +445,16 @@ document.getElementById("formAlerta").addEventListener("submit", async (e) => {
   const lat = document.getElementById("alertaLat").value;
   const lng = document.getElementById("alertaLng").value;
   const descripcion = document.getElementById("alertaDescripcion").value.trim();
+  const direccionReferencial = document.getElementById("alertaDireccion").value.trim();
   if (!lat || !lng) return notificar("Haz clic en el mapa para marcar la ubicación antes de registrar.", "warning");
   // PUNTO (agregado): sin descripción, el operador de despacho no
   // sabría qué está pasando ni el tipo de ayuda a enviar.
   if (!descripcion) return notificar("Escribe una descripción breve de la emergencia.", "warning");
+  // PUNTO (agregado): una descripción y una dirección/referencia muy
+  // cortas no le sirven de nada al operador de despacho.
+  if (descripcion.length <= 15) return notificar("La descripción debe tener más de 15 caracteres.", "warning");
+  if (!direccionReferencial) return notificar("Escribe la dirección o referencia de la emergencia.", "warning");
+  if (direccionReferencial.length <= 10) return notificar("La dirección o referencia debe tener más de 10 caracteres.", "warning");
 
   try {
     await api("/alertas", {
@@ -456,7 +464,7 @@ document.getElementById("formAlerta").addEventListener("submit", async (e) => {
         descripcion,
         latitud: parseFloat(lat),
         longitud: parseFloat(lng),
-        direccion_referencial: document.getElementById("alertaDireccion").value
+        direccion_referencial: direccionReferencial
       })
     });
     document.getElementById("formAlerta").reset();
@@ -654,12 +662,12 @@ async function mostrarDetalleDespacho(idAlerta) {
     <h4 class="despacho-seccion-titulo">Asignación Logística</h4>
     <div style="display:flex;flex-direction:column;gap:15px;">
       <div class="field">
-        <span class="despacho-campo-titulo">1. Asignar recurso para "${alerta.tipo}"</span>
+        <span class="despacho-campo-titulo">1. Asignar recurso para "${alerta.tipo}" *</span>
         <input type="hidden" id="despachoRecurso">
         ${listaPrioridadRecursos}
       </div>
       <div class="field">
-        <span class="despacho-campo-titulo">2. Sedes de derivación cercanas</span>
+        <span class="despacho-campo-titulo">2. Sede de derivación (obligatoria) *</span>
         <input type="hidden" id="despachoSede">
         ${listaSedes}
       </div>
@@ -690,7 +698,11 @@ function seleccionarDespacho(tipo, id, btnEl) {
 async function ejecutarDespacho(idAlerta) {
   const idRecurso = document.getElementById("despachoRecurso").value;
   const idSede = document.getElementById("despachoSede").value;
+  // PUNTO (agregado): tanto el recurso como la sede de derivación son
+  // obligatorios para despachar (no tiene sentido mandar una unidad
+  // sin saber a dónde deriva al final).
   if (!idRecurso) return notificar("Selecciona un recurso antes de despachar.", "warning");
+  if (!idSede) return notificar("Selecciona una sede de derivación antes de despachar.", "warning");
   try {
     await api(`/alertas/${idAlerta}/asignar-recurso`, {
       method: "PUT",
@@ -767,30 +779,53 @@ document.getElementById("formOperador").addEventListener("submit", async (e) => 
 // ==============================
 // Pide la lista al backend y arma las filas de la tabla.    
 async function cargarOperadores() {
-  // Trae la lista de todos los operadores desde la base de datos de PostgreSQL y arma la tabla del panel de administración.
+  // Trae la lista de todos los operadores (activos e inactivos) desde
+  // PostgreSQL y arma la tabla del panel de administración. El backend
+  // ya los devuelve ordenados con los activos primero.
   try {
-    const ops = await api("/operadores");
+    const ops = await api("/operadores?incluirInactivos=true");
     cacheOperadores = ops;
     const tbody = document.querySelector("#tablaOperadores tbody");
     tbody.innerHTML = "";
     ops.forEach(o => {
       const esUno = o.id_operador === OPERADOR.id; // OPERADOR es el operador logueado (viene del login)
       const tr = document.createElement("tr");
+      // PUNTO (agregado): los operadores desactivados se pintan en
+      // gris y se ubican siempre debajo de los activos (ya vienen
+      // ordenados así desde el backend). En vez del botón de
+      // desactivar (✕) muestran un check verde para reactivarlos.
+      tr.className = o.activo ? "" : "fila-inactiva";
+      const btnEstado = !o.activo
+        ? `<button class="btn-icon btn-icon-activar" aria-label="Activar operador ${o.nombre}" onclick="activarOperador(${o.id_operador})">✓</button>`
+        : (esUno
+            ? `<span class="btn-icon" style="opacity:.4" title="No puedes eliminar tu propio usuario">✕</span>`
+            : `<button class="btn-icon" aria-label="Eliminar operador ${o.nombre}" onclick="eliminarOperador(${o.id_operador})">✕</button>`
+          );
       tr.innerHTML = `
         <td>${o.id_operador}</td><td>${o.nombre}</td><td>${o.usuario}</td><td>${o.rol}</td>
         <td>
           <div class="table-actions">
             <button class="btn-icon btn-icon-edit" aria-label="Editar operador ${o.nombre}" onclick="abrirEditarOperador(${o.id_operador})">✎</button>
-            ${esUno
-              ? `<span class="btn-icon" style="opacity:.4" title="No puedes eliminar tu propio usuario">✕</span>`
-              : `<button class="btn-icon" aria-label="Eliminar operador ${o.nombre}" onclick="eliminarOperador(${o.id_operador})">✕</button>`
-            }
+            ${btnEstado}
           </div>
         </td>
       `;
       tbody.appendChild(tr);
     });
   } catch (err) { console.warn(err.message); }
+}
+
+// ==============================
+// ACTIVAR OPERADOR (REACTIVA UN OPERADOR DESACTIVADO)
+// ==============================
+// Vuelve a poner activo=true al operador; al recargar la tabla pasa
+// de gris (abajo) a blanco (arriba, junto a los demás activos).
+async function activarOperador(id) {
+  try {
+    await api(`/operadores/${id}/activar`, { method: "PUT" });
+    cargarOperadores();
+    notificar("Operador activado.", "success");
+  } catch (err) { manejarError(err, "No se pudo activar el operador: "); }
 }
 
 // ==============================
@@ -881,30 +916,57 @@ document.getElementById("formRecurso").addEventListener("submit", async (e) => {
 // ==============================
 // Pide la lista al backend y también arma la caché de recursos disponibles para el módulo de Despacho.
 async function cargarRecursos() {
-  // Se trae el inventario completo de recursos (vehículos, unidades) y los mete en la tabla del módulo de Recursos.
+  // Se trae el inventario completo de recursos (activos e inactivos)
+  // y los mete en la tabla del módulo de Recursos. El backend ya los
+  // devuelve ordenados con los activos primero.
   try {
-    const recs = await api("/recursos");
+    const recs = await api("/recursos?incluirInactivos=true");
     cacheRecursos = recs;
-    recursosDisponibles = recs.filter(r => r.estado === "disponible");
+    recursosDisponibles = recs.filter(r => r.activo && r.estado === "disponible");
 
     const tbody = document.querySelector("#tablaRecursos tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
     recs.forEach(r => {
       const tr = document.createElement("tr");
+      // PUNTO (agregado): los recursos desactivados se pintan en gris,
+      // van siempre al final (ya vienen ordenados así del backend),
+      // muestran el estado "De Baja" en vez de su estado operativo
+      // viejo, y en vez del botón de desactivar (✕) muestran un check
+      // verde para reactivarlos (vuelven como "Disponible").
+      tr.className = r.activo ? "" : "fila-inactiva";
+      const estadoHTML = r.activo
+        ? `<span class="estado-tag estado-${r.estado}">${r.estado === "ocupado" ? "En Emergencia" : r.estado}</span>`
+        : `<span class="estado-tag estado-baja">De Baja</span>`;
+      const btnEstado = r.activo
+        ? `<button class="btn-icon" aria-label="Eliminar recurso ${r.placa}" onclick="eliminarRecurso(${r.id_recurso})">✕</button>`
+        : `<button class="btn-icon btn-icon-activar" aria-label="Activar recurso ${r.placa}" onclick="activarRecurso(${r.id_recurso})">✓</button>`;
       tr.innerHTML = `
         <td>${r.id_recurso}</td><td>${r.tipo}</td><td>${r.placa}</td>
-        <td><span class="estado-tag estado-${r.estado}">${r.estado === "ocupado" ? "En Emergencia" : r.estado}</span></td>
+        <td>${estadoHTML}</td>
         <td>
           <div class="table-actions">
             <button class="btn-icon btn-icon-edit" aria-label="Editar recurso ${r.placa}" onclick="abrirEditarRecurso(${r.id_recurso})">✎</button>
-            <button class="btn-icon" aria-label="Eliminar recurso ${r.placa}" onclick="eliminarRecurso(${r.id_recurso})">✕</button>
+            ${btnEstado}
           </div>
         </td>
       `;
       tbody.appendChild(tr);
     });
   } catch (err) { console.warn(err.message); }
+}
+
+// ==============================
+// ACTIVAR RECURSO (REACTIVA UN RECURSO DADO DE BAJA)
+// ==============================
+// Vuelve a poner activo=true (y estado='disponible') al recurso; al
+// recargar la tabla pasa de gris (abajo) a blanco (arriba).
+async function activarRecurso(id) {
+  try {
+    await api(`/recursos/${id}/activar`, { method: "PUT" });
+    cargarRecursos();
+    notificar("Recurso activado.", "success");
+  } catch (err) { manejarError(err, "No se pudo activar el recurso: "); }
 }
 
 // ==============================
@@ -997,9 +1059,11 @@ document.getElementById("formInstitucion").addEventListener("submit", async (e) 
 // ==============================
 // Pide la lista al backend y la deja también en caché para armar los selects de Sede.
 async function cargarInstituciones() {
-  // Pide a Oracle (o tu BD institucional) las dependencias (como MINSA, PNP) y arma la tabla en pantalla.
+  // Pide a Oracle (o tu BD institucional) las dependencias (como MINSA, PNP), activas e
+  // inactivas, y arma la tabla en pantalla. El backend ya las devuelve ordenadas con
+  // las activas primero.
   try {
-    const instsRaw = await api("/instituciones");
+    const instsRaw = await api("/instituciones?incluirInactivos=true");
     const insts = instsRaw.map(normalizarClaves);
     cacheInstituciones = insts;
 
@@ -1008,12 +1072,20 @@ async function cargarInstituciones() {
       tbody.innerHTML = "";
       insts.forEach(i => {
         const tr = document.createElement("tr");
+        // PUNTO (agregado): mismo criterio que Operadores/Recursos —
+        // las instituciones desactivadas se pintan en gris y van
+        // siempre al final; en vez del botón de desactivar (✕)
+        // muestran un check verde para reactivarlas.
+        tr.className = i.activo ? "" : "fila-inactiva";
+        const btnEstado = i.activo
+          ? `<button class="btn-icon" aria-label="Eliminar institución ${i.nombre}" onclick="eliminarInstitucion(${i.id_institucion})">✕</button>`
+          : `<button class="btn-icon btn-icon-activar" aria-label="Activar institución ${i.nombre}" onclick="activarInstitucion(${i.id_institucion})">✓</button>`;
         tr.innerHTML = `
           <td>${i.id_institucion}</td><td>${i.nombre}</td><td>${i.tipo}</td>
           <td>
             <div class="table-actions">
               <button class="btn-icon btn-icon-edit" aria-label="Editar institución ${i.nombre}" onclick="abrirEditarInstitucion(${i.id_institucion})">✎</button>
-              <button class="btn-icon" aria-label="Eliminar institución ${i.nombre}" onclick="eliminarInstitucion(${i.id_institucion})">✕</button>
+              ${btnEstado}
             </div>
           </td>
         `;
@@ -1022,10 +1094,12 @@ async function cargarInstituciones() {
     }
 
     // Refresca el <select> de institución del formulario de Sedes
+    // (solo instituciones activas: no tiene sentido crear una sede
+    // nueva colgada de una institución dada de baja).
     const selSede = document.getElementById("sedeInstitucion");
     if (selSede) {
       const seleccionActual = selSede.value;
-      selSede.innerHTML = insts.map(i => `<option value="${i.id_institucion}" data-tipo="${i.tipo}">${i.nombre}</option>`).join("");
+      selSede.innerHTML = insts.filter(i => i.activo).map(i => `<option value="${i.id_institucion}" data-tipo="${i.tipo}">${i.nombre}</option>`).join("");
       if (seleccionActual) selSede.value = seleccionActual;
       aplicarValidacionCapacidadSede();
     }
@@ -1047,6 +1121,19 @@ async function eliminarInstitucion(id) {
     cargarSedes();
     notificar("Institución desactivada en cascada.", "success");
   } catch (err) { manejarError(err, "No se pudo eliminar la institución: "); }
+}
+
+// ==============================
+// ACTIVAR INSTITUCION (REACTIVA UNA INSTITUCIÓN DESACTIVADA)
+// ==============================
+// Vuelve a poner activo=true; al recargar la tabla pasa de gris
+// (abajo) a blanco (arriba, junto a las demás activas).
+async function activarInstitucion(id) {
+  try {
+    await api(`/instituciones/${id}/activar`, { method: "PUT" });
+    cargarInstituciones();
+    notificar("Institución activada.", "success");
+  } catch (err) { manejarError(err, "No se pudo activar la institución: "); }
 }
 
 // ==============================
@@ -1230,9 +1317,11 @@ document.getElementById("formSede").addEventListener("submit", async (e) => {
 // ==============================
 // Pide la lista al backend y también repinta los marcadores de sedes en el mapa.
 async function cargarSedes() {
-  // Carga todas las sucursales o bases operativas que están amarradas a una institución para dibujarlas y listarlas.
+  // Carga todas las sucursales o bases operativas (activas e inactivas) que están
+  // amarradas a una institución, para dibujarlas y listarlas. El backend ya las
+  // devuelve ordenadas con las activas primero.
   try {
-    const sedesRaw = await api("/sedes");
+    const sedesRaw = await api("/sedes?incluirInactivos=true");
     const sedes = sedesRaw.map(normalizarClaves);
     cacheSedes = sedes;
 
@@ -1241,10 +1330,18 @@ async function cargarSedes() {
       tbody.innerHTML = "";
       sedes.forEach(s => {
         const tr = document.createElement("tr");
+        // PUNTO (agregado): mismo criterio que Operadores/Recursos/
+        // Instituciones — las sedes desactivadas se pintan en gris y
+        // van siempre al final; en vez del botón de desactivar (✕)
+        // muestran un check verde para reactivarlas.
+        tr.className = s.activo ? "" : "fila-inactiva";
         const acciones = esAdministrador() ? `
             <div class="table-actions">
               <button class="btn-icon btn-icon-edit" aria-label="Editar sede ${s.direccion}" onclick="abrirEditarSede(${s.id_sede})">✎</button>
-              <button class="btn-icon" aria-label="Eliminar sede ${s.direccion}" onclick="eliminarSede(${s.id_sede})">✕</button>
+              ${s.activo
+                ? `<button class="btn-icon" aria-label="Eliminar sede ${s.direccion}" onclick="eliminarSede(${s.id_sede})">✕</button>`
+                : `<button class="btn-icon btn-icon-activar" aria-label="Activar sede ${s.direccion}" onclick="activarSede(${s.id_sede})">✓</button>`
+              }
             </div>` : "";
         tr.innerHTML = `
           <td>${s.id_sede}</td><td>${s.direccion}</td><td>${s.camas_disponibles}</td><td>${s.calabozos_disponibles}</td>
@@ -1259,6 +1356,19 @@ async function cargarSedes() {
   } catch (err) { console.warn(err.message); }
 }
 
+// ==============================
+// ACTIVAR SEDE (REACTIVA UNA SEDE DADA DE BAJA)
+// ==============================
+// Vuelve a poner activo=true; al recargar la tabla pasa de gris
+// (abajo) a blanco (arriba, junto a las demás activas).
+async function activarSede(id) {
+  try {
+    await api(`/sedes/${id}/activar`, { method: "PUT" });
+    cargarSedes();
+    notificar("Sede activada.", "success");
+  } catch (err) { manejarError(err, "No se pudo activar la sede: "); }
+}
+
 // -----------------------------------------------------------
 // PUNTO 3: Tabla de relaciones (Institución <-> Sede <-> capacidad)
 // -----------------------------------------------------------
@@ -1271,12 +1381,16 @@ function renderizarTablaRelacionInstitucional() {
   const tbody = document.querySelector("#tablaRelacionInstitucional tbody");
   if (!tbody) return;
 
-  if (cacheSedes.length === 0) {
+  // Este resumen solo muestra sedes activas (las dadas de baja ya no
+  // son una opción real de derivación institucional).
+  const sedesActivas = cacheSedes.filter(s => s.activo);
+
+  if (sedesActivas.length === 0) {
     tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-faint);">Aún no hay sedes registradas.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = cacheSedes.map((s, i) => {
+  tbody.innerHTML = sedesActivas.map((s, i) => {
     const inst = cacheInstituciones.find(x => x.id_institucion === s.id_institucion);
     const tipo = s.tipo_institucion || (inst ? inst.tipo : "—");
     return `
@@ -1561,9 +1675,12 @@ window.borrarArchivo = function (index) {
 document.getElementById("formEvidencia").addEventListener("submit", async (e) => {
   e.preventDefault();
   const idAlerta = document.getElementById("evAlerta").value;
-  const descripcion = document.getElementById("evDescripcion").value;
+  const descripcion = document.getElementById("evDescripcion").value.trim();
 
   if (!idAlerta) return notificar("Selecciona una alerta cerrada.", "warning");
+  // PUNTO (agregado): una descripción de cierre muy corta no sirve
+  // de nada en el Historial 360° del caso.
+  if (descripcion.length <= 15) return notificar("La descripción debe tener más de 15 caracteres.", "warning");
   if (archivosSeleccionados.length === 0) return notificar("Selecciona al menos un archivo.", "warning");
 
   try {
@@ -1597,24 +1714,39 @@ document.getElementById("formEvidencia").addEventListener("submit", async (e) =>
 async function cargarEvidencias() {
   try {
     const cerradas = await api("/alertas/estado/cerrada");
-    const select = document.getElementById("evAlerta");
-    if (select) {
-      select.innerHTML = cerradas.map(a => `<option value="${a.id_alerta}">${a.tipo} — ${(a.descripcion || "").slice(0, 40)}</option>`).join("");
-    }
 
     const cont = document.getElementById("listaEvidencias");
-    if (!cont) return;
+    const select = document.getElementById("evAlerta");
 
     if (cerradas.length === 0) {
-      cont.innerHTML = `<p style="color:var(--text-faint);font-size:13px;grid-column:1/-1">Aún no hay casos cerrados.</p>`;
+      if (select) select.innerHTML = "";
+      if (cont) cont.innerHTML = `<p style="color:var(--text-faint);font-size:13px;grid-column:1/-1">Aún no hay casos cerrados.</p>`;
       return;
     }
 
-    const todas = [];
-    for (const a of cerradas) {
-      const evs = await api(`/evidencias/alerta/${a.id_alerta}`);
-      todas.push(...evs);
+    // -----------------------------------------------------------
+    // PUNTO (agregado): antes de armar el <select>, se consulta para
+    // cada caso cerrado si ya tiene evidencias, para poder marcarlo
+    // con un "📎 Con evidencias" al lado (así el operador no tiene
+    // que adivinar cuáles ya se subieron y cuáles no).
+    // -----------------------------------------------------------
+    const evidenciasPorAlerta = await Promise.all(
+      cerradas.map(a => api(`/evidencias/alerta/${a.id_alerta}`).catch(() => []))
+    );
+
+    if (select) {
+      const seleccionActual = select.value;
+      select.innerHTML = cerradas.map((a, i) => {
+        const tieneEvidencias = evidenciasPorAlerta[i].length > 0;
+        const etiqueta = `${a.tipo} — ${(a.descripcion || "").slice(0, 40)}${tieneEvidencias ? " 📎 (Con evidencias)" : ""}`;
+        return `<option value="${a.id_alerta}">${etiqueta}</option>`;
+      }).join("");
+      if (seleccionActual) select.value = seleccionActual;
     }
+
+    if (!cont) return;
+
+    const todas = evidenciasPorAlerta.flat();
 
     cont.innerHTML = todas.length === 0
       ? `<p style="color:var(--text-faint);font-size:13px;grid-column:1/-1">Ningún caso cerrado tiene evidencia todavía.</p>`

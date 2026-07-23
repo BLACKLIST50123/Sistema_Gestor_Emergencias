@@ -103,6 +103,12 @@ router.post("/evidencias", requireRole("operador", "administrador"), manejarErro
   if (!id_alerta || !descripcion) {
     return res.status(400).json({ error: "id_alerta y descripcion son requeridos" });
   }
+  // PUNTO (agregado): una descripción de cierre muy corta ("listo",
+  // "resuelto") no sirve de nada en el Historial 360°, así que se
+  // exige un mínimo de detalle real sobre cómo se resolvió el caso.
+  if (descripcion.trim().length <= 15) {
+    return res.status(400).json({ error: "La descripción debe tener más de 15 caracteres" });
+  }
 
   // -----------------------------------------------------------
   // Replicidad: congelamos AQUÍ (al momento de escribir) una copia

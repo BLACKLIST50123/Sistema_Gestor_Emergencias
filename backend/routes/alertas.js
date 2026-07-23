@@ -78,6 +78,21 @@ router.post("/alertas", requireRole("operador", "administrador"), async (req, re
   if (!descripcion || !descripcion.trim()) {
     return res.status(400).json({ error: "La descripción de la alerta es obligatoria" });
   }
+  // PUNTO (agregado): una descripción muy corta ("choque", "ayuda")
+  // no le sirve de nada al operador de despacho para decidir qué
+  // mandar, así que se exige un mínimo de detalle.
+  if (descripcion.trim().length <= 15) {
+    return res.status(400).json({ error: "La descripción debe tener más de 15 caracteres" });
+  }
+  // PUNTO (agregado): mismo criterio para la dirección/referencia,
+  // con un mínimo más corto porque suele ser más breve por naturaleza
+  // (ej. "Av. Brasil 450"), pero igual debe tener algo de detalle real.
+  if (!direccion_referencial || !direccion_referencial.trim()) {
+    return res.status(400).json({ error: "La dirección o referencia es obligatoria" });
+  }
+  if (direccion_referencial.trim().length <= 10) {
+    return res.status(400).json({ error: "La dirección o referencia debe tener más de 10 caracteres" });
+  }
   if (latitud == null || longitud == null) {
     return res.status(400).json({ error: "latitud y longitud son requeridas" });
   }
@@ -134,8 +149,15 @@ router.put("/alertas/:id/asignar-recurso", requireRole("operador", "administrado
   const id_alerta = req.params.id;
   const { id_recurso, id_sede_derivacion } = req.body;
 
+  // PUNTO (agregado): antes se podía despachar una unidad sin elegir
+  // a qué sede se iba a derivar (o al revés). Ahora ambos son
+  // obligatorios: no tiene sentido mandar un recurso sin saber a
+  // dónde deriva, ni "reservar" una sede sin una unidad en camino.
   if (!id_recurso) {
     return res.status(400).json({ error: "id_recurso es requerido" });
+  }
+  if (!id_sede_derivacion) {
+    return res.status(400).json({ error: "id_sede_derivacion es requerido" });
   }
 
   // 1) Cambiar el estado del recurso en su BD dueña (PostgreSQL)

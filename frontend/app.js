@@ -839,7 +839,7 @@ async function eliminarOperador(id) {
   try {
     await api(`/operadores/${id}`, { method: "DELETE" });
     cargarOperadores();
-    notificar("Operador desactivado en cascada.", "success");
+    notificar("Operador desactivado.", "success");
   } catch (err) { manejarError(err, "No se pudo eliminar el operador: "); }
 }
 
@@ -937,7 +937,7 @@ async function cargarRecursos() {
       tr.className = r.activo ? "" : "fila-inactiva";
       const estadoHTML = r.activo
         ? `<span class="estado-tag estado-${r.estado}">${r.estado === "ocupado" ? "En Emergencia" : r.estado}</span>`
-        : `<span class="estado-tag estado-baja">De Baja</span>`;
+        : `<span class="estado-tag estado-baja">Fuera de Servicio</span>`;
       const btnEstado = r.activo
         ? `<button class="btn-icon" aria-label="Eliminar recurso ${r.placa}" onclick="eliminarRecurso(${r.id_recurso})">✕</button>`
         : `<button class="btn-icon btn-icon-activar" aria-label="Activar recurso ${r.placa}" onclick="activarRecurso(${r.id_recurso})">✓</button>`;
@@ -975,7 +975,7 @@ async function activarRecurso(id) {
 // Pregunta antes de desactivar el recurso y luego lo manda a borrar.
 async function eliminarRecurso(id) {
   // Cuando el admin da clic al tachito de basura de un recurso, pide confirmación y le avisa a la base de datos que lo borre.
-  const ok = await confirmar("¿Desactivar este recurso? También se propaga a sus réplicas.");
+  const ok = await confirmar("¿Desactivar este recurso?");
   if (!ok) return;
   try {
     await api(`/recursos/${id}`, { method: "DELETE" });
@@ -1113,13 +1113,13 @@ async function cargarInstituciones() {
 // ==============================
 // Avisa que también se dan de baja sus sedes, y si confirman, manda el borrado en cascada.
 async function eliminarInstitucion(id) {
-  const ok = await confirmar("Esto desactivará la institución y sus sedes en cascada. ¿Continuar?");
+  const ok = await confirmar("Esto desactivará la institución y sus sedes ¿Continuar?");
   if (!ok) return;
   try {
     await api(`/instituciones/${id}`, { method: "DELETE" });
     cargarInstituciones();
     cargarSedes();
-    notificar("Institución desactivada en cascada.", "success");
+    notificar("Institución desactivada.", "success");
   } catch (err) { manejarError(err, "No se pudo eliminar la institución: "); }
 }
 
@@ -1418,7 +1418,7 @@ function renderizarTablaRelacionInstitucional() {
 // ==============================
 // Pregunta antes de desactivar la sede y luego manda el borrado.
 async function eliminarSede(id) {
-  const ok = await confirmar("¿Desactivar esta sede? También se propaga a sus réplicas.");
+  const ok = await confirmar("¿Desactivar esta sede?");
   if (!ok) return;
   try {
     await api(`/sedes/${id}`, { method: "DELETE" });
@@ -1735,7 +1735,7 @@ async function cargarEvidencias() {
     // -----------------------------------------------------------
     // PUNTO (agregado): antes de armar el <select>, se consulta para
     // cada caso cerrado si ya tiene evidencias, para poder marcarlo
-    // con un "📎 Con evidencias" al lado (así el operador no tiene
+    // con un "Con evidencias" al lado (así el operador no tiene
     // que adivinar cuáles ya se subieron y cuáles no).
     // -----------------------------------------------------------
     const evidenciasPorAlerta = await Promise.all(
@@ -1746,7 +1746,7 @@ async function cargarEvidencias() {
       const seleccionActual = select.value;
       select.innerHTML = cerradas.map((a, i) => {
         const tieneEvidencias = evidenciasPorAlerta[i].length > 0;
-        const etiqueta = `${a.tipo} — ${(a.descripcion || "").slice(0, 40)}${tieneEvidencias ? " 📎 (Con evidencias)" : ""}`;
+        const etiqueta = `${a.tipo} — ${(a.descripcion || "").slice(0, 40)}${tieneEvidencias ? "   (Con evidencias)" : ""}`;
         return `<option value="${a.id_alerta}">${etiqueta}</option>`;
       }).join("");
       if (seleccionActual) select.value = seleccionActual;

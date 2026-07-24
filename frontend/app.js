@@ -1363,9 +1363,17 @@ async function cargarSedes() {
 // (abajo) a blanco (arriba, junto a las demás activas).
 async function activarSede(id) {
   try {
-    await api(`/sedes/${id}/activar`, { method: "PUT" });
+    const resultado = await api(`/sedes/${id}/activar`, { method: "PUT" });
     cargarSedes();
-    notificar("Sede activada.", "success");
+    // Si la institución dueña de la sede estaba desactivada, el
+    // backend la reactivó también (para mantener la relación), así
+    // que refrescamos su tabla y lo avisamos en la notificación.
+    if (resultado && resultado.institucionReactivada) {
+      cargarInstituciones();
+      notificar(`Sede activada. Su institución '${resultado.institucionReactivada.nombre}' también fue reactivada.`, "success");
+    } else {
+      notificar("Sede activada.", "success");
+    }
   } catch (err) { manejarError(err, "No se pudo activar la sede: "); }
 }
 

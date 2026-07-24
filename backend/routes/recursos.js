@@ -388,8 +388,12 @@ router.put("/recursos/:id/estado", requireRole("operador", "administrador"), asy
 // DELETE /RECURSOS/:ID (DAR DE BAJA UN RECURSO)
 // ==============================
 router.delete("/recursos/:id", requireRole("administrador"), async (req, res) => {
+  // NOTA: al desactivar un recurso también se actualiza su estado a
+  // 'fuera_de_servicio' (es el mismo estado que se puede elegir a
+  // mano en el panel de edición), para que quede reflejado tanto en
+  // el flag "activo" como en el campo "estado".
   const result = await pgPool.query(
-    `UPDATE Recursos SET activo = FALSE WHERE id_recurso = $1 RETURNING *`,
+    `UPDATE Recursos SET activo = FALSE, estado = 'fuera_de_servicio' WHERE id_recurso = $1 RETURNING *`,
     [req.params.id]
   );
   const recurso = result.rows[0];

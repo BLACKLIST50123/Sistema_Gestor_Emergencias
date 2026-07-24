@@ -475,7 +475,43 @@ router.put("/sedes/:id/activar", requireRole("administrador"), async (req, res) 
 
     await registrarAuditoria(req.operador.id_operador, "ACTIVAR_SEDE", "Sedes", idSede, `Sede '${sede.DIRECCION}' reactivada`);
 
-    res.json({ mensaje: "Sede reactivada", replicas });
+    // NOTA: si la institución dueña de esta sede también estaba
+    // desactivada, se reactiva junto con la sede. Esto es al revés
+    // de lo que pasa con la institución (activar una institución NO
+    // reactiva sus sedes, eso se hace a mano), pero acá es necesario
+    // para no dejar una sede activa "colgada" de una institución
+    // inactiva y así mantener la relación entre ambas.
+    let institucionReactivada = null;
+    const institucionActual = await conn.execute(
+      `SELECT nombre, activo FROM Instituciones WHERE id_institucion = :id`,
+      [sede.ID_INSTITUCION]
+    );
+    const institucion = institucionActual.rows[0];
+    if (institucion && institucion.ACTIVO === false) {
+      await conn.execute(
+        `UPDATE Instituciones SET activo = TRUE WHERE id_institucion = :id`,
+        [sede.ID_INSTITUCION],
+        { autoCommit: true }
+      );
+
+      const replicasInstitucion = await sincronizarInstitucion({
+        id_institucion: sede.ID_INSTITUCION,
+        nombre: institucion.NOMBRE,
+        activo: true
+      });
+
+      await registrarAuditoria(
+        req.operador.id_operador,
+        "ACTIVAR_INSTITUCION",
+        "Instituciones",
+        sede.ID_INSTITUCION,
+        `Institución '${institucion.NOMBRE}' reactivada automáticamente al reactivar su sede '${sede.DIRECCION}'`
+      );
+
+      institucionReactivada = { id_institucion: sede.ID_INSTITUCION, nombre: institucion.NOMBRE, replicas: replicasInstitucion };
+    }
+
+    res.json({ mensaje: "Sede reactivada", replicas, institucionReactivada });
   } finally {
     await conn.close();
   }

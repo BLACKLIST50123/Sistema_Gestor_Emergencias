@@ -672,6 +672,26 @@ button, input, select, textarea {
 }
 .geo-picker-coords { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
+/* PUNTO 3 (NOTAS): boton "Agregar" del selector de mapa de Sedes.
+   Antes usaba .btn-ghost (gris, se perdia junto a los demas
+   controles del formulario). Le damos su propio color (azul --pg,
+   el mismo tono que ya se usa para PostgreSQL/geo en el resto de
+   la app) para que se note que abre el mapa. */
+.btn-geo {
+  background: var(--pg);
+  border: 1px solid var(--pg);
+  color: #0B0F14;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.btn-geo:hover { filter: brightness(1.1); }
+.btn-geo:active { transform: scale(0.98); }
+
 
 /* =========================================================
    SECCIÓN 7: MÓDULO DE ALERTAS Y DESPACHO
